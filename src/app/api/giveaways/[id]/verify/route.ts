@@ -3,6 +3,7 @@ import { GiveawayStore } from '@/lib/giveaway-store';
 import { verifyDrawResult } from '@/core/randomizer/deterministic';
 import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
+import { resolveClientIp } from '@/lib/client-ip';
 
 export async function GET(
   req: NextRequest,
@@ -10,8 +11,8 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    expensiveApiRateLimiter.assertAllowed(`verify-get:${ip}:${id}`);
+    const clientIp = resolveClientIp(req);
+    expensiveApiRateLimiter.assertAllowed(`verify-get:${clientIp}:${id}`);
 
     const giveaway = await GiveawayStore.getById(id);
     if (!giveaway) {

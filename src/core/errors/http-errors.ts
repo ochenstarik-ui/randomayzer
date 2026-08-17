@@ -39,6 +39,30 @@ export class ConflictError extends AppError {
   readonly code = 'CONFLICT';
 }
 
+export class IdempotencyKeyReusedError extends AppError {
+  readonly statusCode = 409;
+  readonly code = 'IDEMPOTENCY_KEY_REUSED';
+
+  constructor(
+    message: string = 'Idempotency key was previously used with different request parameters',
+    details?: any
+  ) {
+    super(message, details);
+  }
+}
+
+export class DrawAlreadyCompletedError extends AppError {
+  readonly statusCode = 409;
+  readonly code = 'DRAW_ALREADY_COMPLETED';
+
+  constructor(
+    message: string = 'Giveaway has already been drawn and finalized. Repeat draws are not permitted.',
+    details?: any
+  ) {
+    super(message, details);
+  }
+}
+
 export class RateLimitError extends AppError {
   readonly statusCode = 429;
   readonly code = 'RATE_LIMIT_EXCEEDED';

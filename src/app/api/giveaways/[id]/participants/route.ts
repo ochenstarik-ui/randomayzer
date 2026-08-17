@@ -6,6 +6,7 @@ import { fetchParticipantsSchema, validateProviderCapabilities } from '@/core/va
 import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter, generalApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
+import { resolveClientIp } from '@/lib/client-ip';
 
 export async function GET(
   req: NextRequest,
@@ -13,8 +14,8 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    generalApiRateLimiter.assertAllowed(`participants-get:${ip}`);
+    const clientIp = resolveClientIp(req);
+    generalApiRateLimiter.assertAllowed(`participants-get:${clientIp}`);
 
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -39,16 +40,8 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    expensiveApiRateLimiter.assertAllowed(`participants-import:${ip}:${id}`);
-
-    const idempotencyKey = req.headers.get('idempotency-key');
-    if (idempotencyKey) {
-      const cached = IdempotencyStore.get(`import-part:${idempotencyKey}`);
-      if (cached) {
-        return NextResponse.json(cached.body, { status: cached.statusCode });
-      }
-    }
+    const clientIp = resolveClientIp(req);
+    expensiveApiRateLimiter.assertAllowed(`participants-import:${clientIp}:${id}`);
 
     const giveaway = await GiveawayStore.getById(id);
     if (!giveaway) {
@@ -57,6 +50,19 @@ export async function POST(
 
     const rawBody = await req.json();
     const validated = fetchParticipantsSchema.parse(rawBody);
+
+    const idempotencyKey = req.headers.get('idempotency-key');
+    if (idempotencyKey) {
+      const cached = IdempotencyStore.get({
+        key: idempotencyKey,
+        operation: 'participants-import',
+        giveawayId: id,
+        requestPayload: validated,
+      });
+      if (cached) {
+        return NextResponse.json(cached.body, { status: cached.statusCode });
+      }
+    }
 
     const provider = ProviderFactory.getVkProvider();
     validateProviderCapabilities(validated.filterRules, provider.capabilities);
@@ -91,7 +97,14 @@ export async function POST(
     };
 
     if (idempotencyKey) {
-      IdempotencyStore.set(`import-part:${idempotencyKey}`, 200, responseBody);
+      IdempotencyStore.set({
+        key: idempotencyKey,
+        operation: 'participants-import',
+        giveawayId: id,
+        requestPayload: validated,
+        statusCode: 200,
+        body: responseBody,
+      });
     }
 
     return NextResponse.json(responseBody);

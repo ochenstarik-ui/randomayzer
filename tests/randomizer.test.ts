@@ -131,22 +131,35 @@ describe('Deterministic Randomizer V1 (HMAC_SHA256_FY_V1)', () => {
     expect(uniqueIds.size).toBe(10);
   });
 
-  it('should handle small pool sizes gracefully', () => {
+  it('should strictly enforce winner count contract (never silently reduce winners count)', () => {
     const snapshot = createMockSnapshot(2);
     const seed = 'small-pool-seed';
 
-    const draw = executeDeterministicDrawV1({
-      giveawayId: 'gw-small',
+    // Requesting 5 winners on 2 eligible participants must throw
+    expect(() =>
+      executeDeterministicDrawV1({
+        giveawayId: 'gw-small',
+        snapshot,
+        totalLoadedCount: 2,
+        winnersCount: 5,
+        reserveWinnersCount: 3,
+        seed,
+        filterRules: DEFAULT_FILTER_RULES,
+      })
+    ).toThrow(/exceeds eligible participants count/i);
+
+    // Requesting exactly 2 winners on 2 eligible participants succeeds
+    const validDraw = executeDeterministicDrawV1({
+      giveawayId: 'gw-small-valid',
       snapshot,
       totalLoadedCount: 2,
-      winnersCount: 5,
-      reserveWinnersCount: 3,
+      winnersCount: 2,
+      reserveWinnersCount: 0,
       seed,
       filterRules: DEFAULT_FILTER_RULES,
     });
-
-    expect(draw.winners.length).toBe(2);
-    expect(draw.reserveWinners.length).toBe(0);
+    expect(validDraw.winners.length).toBe(2);
+    expect(validDraw.reserveWinners.length).toBe(0);
   });
 
   it('should allow third-party audit replay verification via verifyDrawResult', () => {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
 import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
 import { generalApiRateLimiter } from '@/lib/rate-limiter';
+import { resolveClientIp } from '@/lib/client-ip';
 
 export async function GET(
   req: NextRequest,
@@ -9,8 +10,8 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    generalApiRateLimiter.assertAllowed(`giveaway-get:${ip}`);
+    const clientIp = resolveClientIp(req);
+    generalApiRateLimiter.assertAllowed(`giveaway-get:${clientIp}`);
 
     const giveaway = await GiveawayStore.getById(id);
 

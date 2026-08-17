@@ -4,11 +4,12 @@ import { createGiveawaySchema } from '@/core/validation/giveaway-schemas';
 import { handleApiError } from '@/core/errors/http-errors';
 import { generalApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
+import { resolveClientIp } from '@/lib/client-ip';
 
 export async function GET(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    generalApiRateLimiter.assertAllowed(`giveaways-list:${ip}`);
+    const clientIp = resolveClientIp(req);
+    generalApiRateLimiter.assertAllowed(`giveaways-list:${clientIp}`);
 
     // Return lightweight summary for scalability (no massive participant/snapshot payloads)
     const summaries = await GiveawayStore.listSummaries();
@@ -24,19 +25,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    generalApiRateLimiter.assertAllowed(`giveaway-create:${ip}`);
+    const clientIp = resolveClientIp(req);
+    generalApiRateLimiter.assertAllowed(`giveaway-create:${clientIp}`);
+
+    const rawBody = await req.json();
+    const validated = createGiveawaySchema.parse(rawBody);
 
     const idempotencyKey = req.headers.get('idempotency-key');
     if (idempotencyKey) {
-      const cached = IdempotencyStore.get(`create-gw:${idempotencyKey}`);
+      const cached = IdempotencyStore.get({
+        key: idempotencyKey,
+        operation: 'create-giveaway',
+        requestPayload: validated,
+      });
       if (cached) {
         return NextResponse.json(cached.body, { status: cached.statusCode });
       }
     }
-
-    const rawBody = await req.json();
-    const validated = createGiveawaySchema.parse(rawBody);
 
     const giveaway = await GiveawayStore.create({
       sourceUrl: validated.sourceUrl,
@@ -53,7 +58,13 @@ export async function POST(req: NextRequest) {
     };
 
     if (idempotencyKey) {
-      IdempotencyStore.set(`create-gw:${idempotencyKey}`, 201, responseBody);
+      IdempotencyStore.set({
+        key: idempotencyKey,
+        operation: 'create-giveaway',
+        requestPayload: validated,
+        statusCode: 201,
+        body: responseBody,
+      });
     }
 
     return NextResponse.json(responseBody, { status: 201 });

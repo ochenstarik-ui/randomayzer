@@ -6,6 +6,7 @@ import { createSnapshotSchema, validateProviderCapabilities } from '@/core/valid
 import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
+import { resolveClientIp } from '@/lib/client-ip';
 
 export async function POST(
   req: NextRequest,
@@ -13,16 +14,8 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
-    expensiveApiRateLimiter.assertAllowed(`snapshot-lock:${ip}:${id}`);
-
-    const idempotencyKey = req.headers.get('idempotency-key');
-    if (idempotencyKey) {
-      const cached = IdempotencyStore.get(`lock-snap:${idempotencyKey}`);
-      if (cached) {
-        return NextResponse.json(cached.body, { status: cached.statusCode });
-      }
-    }
+    const clientIp = resolveClientIp(req);
+    expensiveApiRateLimiter.assertAllowed(`snapshot-lock:${clientIp}:${id}`);
 
     const giveaway = await GiveawayStore.getById(id);
     if (!giveaway) {
@@ -35,6 +28,19 @@ export async function POST(
 
     const rawBody = await req.json();
     const validated = createSnapshotSchema.parse(rawBody);
+
+    const idempotencyKey = req.headers.get('idempotency-key');
+    if (idempotencyKey) {
+      const cached = IdempotencyStore.get({
+        key: idempotencyKey,
+        operation: 'snapshot-lock',
+        giveawayId: id,
+        requestPayload: validated,
+      });
+      if (cached) {
+        return NextResponse.json(cached.body, { status: cached.statusCode });
+      }
+    }
 
     const provider = ProviderFactory.getVkProvider();
     validateProviderCapabilities(validated.filterRules, provider.capabilities);
@@ -64,7 +70,14 @@ export async function POST(
     };
 
     if (idempotencyKey) {
-      IdempotencyStore.set(`lock-snap:${idempotencyKey}`, 200, responseBody);
+      IdempotencyStore.set({
+        key: idempotencyKey,
+        operation: 'snapshot-lock',
+        giveawayId: id,
+        requestPayload: validated,
+        statusCode: 200,
+        body: responseBody,
+      });
     }
 
     return NextResponse.json(responseBody);

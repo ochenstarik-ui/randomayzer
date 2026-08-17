@@ -63,9 +63,15 @@ export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExe
   // 2. Initialize unbiased HMAC stream keyed by seed and snapshotHash
   const stream = new DeterministicHmacStream(seed, snapshotHash);
 
-  const totalNeeded = Math.min(winnersCount + reserveWinnersCount, pool.length);
-  const actualWinnersCount = Math.min(winnersCount, totalNeeded);
-  const actualReserveCount = Math.max(0, totalNeeded - actualWinnersCount);
+  const totalNeeded = winnersCount + reserveWinnersCount;
+  if (totalNeeded > pool.length) {
+    throw new Error(
+      `Requested ${winnersCount} winners and ${reserveWinnersCount} reserve winners (${totalNeeded} total) exceeds eligible participants count (${pool.length})`
+    );
+  }
+
+  const actualWinnersCount = winnersCount;
+  const actualReserveCount = reserveWinnersCount;
 
   // 3. True partial Fisher-Yates shuffle: swap pool[i] with pool[j] where j in [i, n-1]
   for (let i = 0; i < totalNeeded; i++) {
