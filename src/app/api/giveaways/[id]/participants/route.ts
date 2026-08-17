@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
 import { ProviderRegistry } from '@/providers/registry';
 import { executeParticipantPipeline } from '@/core/pipeline/participant-enricher';
+import { validateFilterRulesAgainstProviderCapabilities } from '@/core/filtering/rule-validation';
 
 export async function POST(
   req: NextRequest,
@@ -18,6 +19,15 @@ export async function POST(
 
     const rules = body.filterRules || giveaway.filterRules;
     const provider = ProviderRegistry.getProvider(giveaway.platform);
+
+    // Reject filter rules the selected provider cannot actually verify
+    const capabilityCheck = validateFilterRulesAgainstProviderCapabilities(rules, provider.capabilities);
+    if (!capabilityCheck.valid) {
+      return NextResponse.json(
+        { error: 'Unsupported filter rules', details: capabilityCheck.errors },
+        { status: 400 }
+      );
+    }
 
     // 1. Fetch raw participants
     const rawParticipants = await provider.fetchParticipants({
