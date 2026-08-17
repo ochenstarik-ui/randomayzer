@@ -43,6 +43,7 @@ async function createReadyGiveaway() {
   }));
 
   await GiveawayStore.updateParticipants(gw.id, participants);
+  await GiveawayStore.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
   return gw;
 }
 
@@ -52,7 +53,7 @@ describe('Concurrency analysis', () => {
     ProviderRegistry.useMockVk();
   });
 
-  it('documents current double-draw race behavior (both requests may succeed)', async () => {
+  it('documents double-draw race protection (exactly one succeeds with 200, concurrent receives 409)', async () => {
     const gw = await createReadyGiveaway();
 
     const req1 = new NextRequest(`http://localhost/api/giveaways/${gw.id}/draw`, {
@@ -69,10 +70,9 @@ describe('Concurrency analysis', () => {
       drawPost(req2, { params: { id: gw.id } }),
     ]);
 
-    // This assertion captures the CURRENT behavior so the test passes today.
-    // If the race is fixed, the previous `it.failing` will start passing and
-    // this test should be updated to assert one failure.
-    expect([res1.status, res2.status]).toContain(200);
+    const statuses = [res1.status, res2.status];
+    expect(statuses).toContain(200);
+    expect(statuses).toContain(409);
   });
 
   it('should not corrupt giveaway state when snapshot and draw race', async () => {
@@ -107,7 +107,7 @@ describe('Concurrency analysis', () => {
     const gw = await createReadyGiveaway();
     const refreshed = await GiveawayStore.getById(gw.id);
     const eligible = refreshed!.participants.filter(p => p.eligible);
-    const snapshot = await GiveawayStore.createAndLockSnapshot(gw.id, eligible, DEFAULT_FILTER_RULES);
+    const snapshot = refreshed!.latestSnapshot!;
     await GiveawayStore.saveDrawResult(gw.id, snapshot.id, {
       drawId: 'draw-test',
       giveawayId: gw.id,
@@ -132,8 +132,6 @@ describe('Concurrency analysis', () => {
     });
 
     const res = await participantsPost(req, { params: { id: gw.id } });
-    // The route catches the FSM error and returns 500; the important thing is
-    // that the DRAWN giveaway is not silently overwritten.
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 });

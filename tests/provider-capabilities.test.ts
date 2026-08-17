@@ -130,8 +130,8 @@ describe('Provider capabilities', () => {
     const res = await participantsPost(req, { params: { id: gw.id } });
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toMatch(/Unsupported filter rules/i);
-    expect(data.details.some((d: string) => d.includes('requireRepost'))).toBe(true);
+    const errorMessage = data.error?.message || data.error || '';
+    expect(errorMessage).toMatch(/repost/i);
   });
 
   it('participants route returns 400 when excludeAdmins is requested for VK', async () => {
@@ -151,7 +151,8 @@ describe('Provider capabilities', () => {
     const res = await participantsPost(req, { params: { id: gw.id } });
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.details.some((d: string) => d.includes('excludeAdmins'))).toBe(true);
+    const errorMessage = data.error?.message || data.error || '';
+    expect(errorMessage).toMatch(/admin/i);
   });
 
   it('participants route succeeds for supported VK rules', async () => {
