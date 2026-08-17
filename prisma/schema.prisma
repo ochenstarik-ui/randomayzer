@@ -89,6 +89,7 @@ model ParticipantSnapshot {
   version                  Int          @default(1)
   createdAt                DateTime     @default(now())
   eligibleParticipants     Json         // Canonical JSON array of FilteredParticipant
+  filterRulesSnapshot      Json         // Canonical JSON snapshot of FilterRules
   participantCount         Int
   participantsSnapshotHash String
   conditionsHash           String
@@ -101,38 +102,41 @@ model ParticipantSnapshot {
 }
 
 model DrawResult {
-  id                 String              @id @default(cuid())
-  giveawayId         String              @unique
-  giveaway           Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
-  snapshotId         String              @unique
-  snapshot           ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
-  winners            Json                // Array of Winner entities
-  reserveWinners     Json                // Array of Winner entities
-  winnerIds          Json                // string[]
-  reserveWinnerIds   Json                // string[]
-  totalEligibleCount Int
-  totalLoadedCount   Int
-  seedUsed           String
-  algorithmVersion   String              @default("HMAC_SHA256_FY_V1")
-  auditHash          String
-  drawnAt            DateTime            @default(now())
+  id                     String              @id @default(cuid())
+  drawId                 String              // Original domain drawId (e.g. draw_8f9102ab...)
+  giveawayId             String              @unique
+  giveaway               Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  snapshotId             String              @unique
+  snapshot               ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  winners                Json                // Array of Winner entities
+  reserveWinners         Json                // Array of Winner entities
+  winnerIds              Json                // string[]
+  reserveWinnerIds       Json                // string[]
+  totalEligibleCount     Int
+  totalLoadedCount       Int
+  seedUsed               String
+  algorithmVersion       String              @default("HMAC_SHA256_FY_V1")
+  deterministicProofHash String
+  auditEventHash         String
+  drawnAt                DateTime            @default(now())
 }
 
 model AuditRecord {
-  id                       String              @id @default(cuid())
-  giveawayId               String              @unique
-  giveaway                 Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
-  snapshotId               String              @unique
-  snapshot                 ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
-  algorithmVersion         String              @default("HMAC_SHA256_FY_V1")
-  seed                     String
+  id                     String              @id @default(cuid())
+  giveawayId             String              @unique
+  giveaway               Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  snapshotId             String              @unique
+  snapshot               ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  algorithmVersion       String              @default("HMAC_SHA256_FY_V1")
+  seed                   String
   participantsSnapshotHash String
-  conditionsHash           String
-  auditHash                String
-  winnerIds                Json                // string[]
-  reserveWinnerIds         Json                // string[]
-  eligibleCount            Int
-  drawId                   String
-  drawnAt                  DateTime            @default(now())
-  verifiedAt               DateTime            @default(now())
+  conditionsHash         String
+  deterministicProofHash String
+  auditEventHash         String
+  winnerIds              Json                // string[]
+  reserveWinnerIds       Json                // string[]
+  eligibleCount          Int
+  drawId                 String
+  drawnAt                DateTime            @default(now())
+  verifiedAt             DateTime            @default(now())
 }

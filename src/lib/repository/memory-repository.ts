@@ -55,10 +55,22 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     const snaps = this.snapshots.get(id) || [];
     const latest = snaps.length > 0 ? snaps[snaps.length - 1] : null;
 
+    let drawResult = gw.drawResult;
+    if (drawResult) {
+      // Strictly bind to the snapshot referenced by snapshotId
+      const boundSnapshot = snaps.find(s => s.id === drawResult?.snapshotId) || latest;
+      drawResult = {
+        ...drawResult,
+        participantsSnapshotHash: boundSnapshot?.participantsSnapshotHash || '',
+        conditionsHash: boundSnapshot?.conditionsHash || '',
+      };
+    }
+
     return {
       ...gw,
       snapshots: [...snaps],
       latestSnapshot: latest,
+      drawResult,
     };
   }
 
@@ -119,6 +131,7 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       version: newVersion,
       createdAt: new Date().toISOString(),
       eligibleParticipants: [...eligibleParticipants],
+      filterRulesSnapshot: { ...rules },
       participantCount: eligibleParticipants.length,
       participantsSnapshotHash,
       conditionsHash,
