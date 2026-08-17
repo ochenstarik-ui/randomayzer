@@ -1,75 +1,69 @@
-import { createHmac, createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { FilteredParticipant, Winner } from '../types/participant';
-import { DrawExecutionParams, DrawExecutionResult } from '../types/audit';
-import { computeParticipantsSnapshotHash } from './hasher';
+import { DrawExecutionParams, DrawExecutionResult, CURRENT_RANDOMIZER_ALGORITHM, ParticipantSnapshotData } from '../types/audit';
+import { DeterministicHmacStream } from './unbiased-sampler';
+import { computeAuditHash } from './canonical';
 
-const ALGORITHM_NAME = 'HMAC-SHA256-SEEDED-SELECTION-V1';
-
-/**
- * Deterministic pseudo-random number generator using HMAC-SHA256.
- * Given a seed, snapshot hash, and step/index, generates a deterministic 32-bit unsigned integer.
- */
-export function getDeterministicUint32(seed: string, snapshotHash: string, step: number): number {
-  const hmac = createHmac('sha256', seed);
-  hmac.update(`${snapshotHash}:step:${step}`);
-  const hashBuffer = hmac.digest();
-  // Read first 4 bytes as unsigned 32-bit big endian integer
-  return hashBuffer.readUInt32BE(0);
-}
+export const ALGORITHM_VERSION_V1 = CURRENT_RANDOMIZER_ALGORITHM; // 'HMAC_SHA256_FY_V1'
 
 /**
- * Generates an audit proof hash for a specific winner step
+ * Generates an individual audit proof hash for a winner position
  */
-export function generateWinnerProofHash(seed: string, snapshotHash: string, position: number, participantId: string): string {
+export function generateWinnerProofHash(
+  seed: string,
+  snapshotHash: string,
+  position: number,
+  participantId: string
+): string {
   return createHash('sha256')
     .update(`${seed}:${snapshotHash}:pos:${position}:id:${participantId}`)
     .digest('hex');
 }
 
 /**
- * Executes a deterministic draw on a set of eligible participants.
- * Guarantees that the same eligible participants + same seed ALWAYS produce the exact same winners.
+ * Executes deterministic Fisher-Yates selection V1 (HMAC_SHA256_FY_V1)
+ * with unbiased rejection sampling.
  */
-export function executeDeterministicDraw(params: DrawExecutionParams): DrawExecutionResult {
+export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExecutionResult {
   const {
     giveawayId,
-    eligibleParticipants,
+    snapshot,
     totalLoadedCount,
     winnersCount,
     reserveWinnersCount,
     seed,
-    filterRules,
   } = params;
 
-  if (eligibleParticipants.length === 0) {
-    throw new Error('Cannot conduct draw with 0 eligible participants');
+  const eligible = snapshot.eligibleParticipants;
+
+  if (!eligible || eligible.length === 0) {
+    throw new Error('Cannot conduct draw with 0 eligible participants in snapshot');
   }
 
-  // 1. Canonical sort to guarantee stability
-  const sortedParticipants = [...eligibleParticipants].sort((a, b) =>
+  // 1. Canonical sort to ensure exact invariant input order
+  const pool = [...eligible].sort((a, b) =>
     a.platformUserId.localeCompare(b.platformUserId)
   );
 
-  // 2. Compute canonical snapshot hash
-  const snapshotHash = computeParticipantsSnapshotHash(sortedParticipants);
+  const snapshotHash = snapshot.participantsSnapshotHash;
+  const conditionsHash = snapshot.conditionsHash;
 
-  // 3. Clone pool for sampling without replacement
-  const pool = [...sortedParticipants];
-  const winners: Winner[] = [];
-  const reserveWinners: Winner[] = [];
+  // 2. Initialize unbiased HMAC stream keyed by seed and snapshotHash
+  const stream = new DeterministicHmacStream(seed, snapshotHash);
 
   const totalNeeded = Math.min(winnersCount + reserveWinnersCount, pool.length);
   const actualWinnersCount = Math.min(winnersCount, totalNeeded);
   const actualReserveCount = Math.max(0, totalNeeded - actualWinnersCount);
 
-  let step = 0;
+  const winners: Winner[] = [];
+  const reserveWinners: Winner[] = [];
+  const winnerIds: string[] = [];
+  const reserveWinnerIds: string[] = [];
 
-  // 4. Select Main Winners
+  // 3. Select Main Winners (Fisher-Yates removal without replacement)
   for (let i = 0; i < actualWinnersCount; i++) {
-    const randUint = getDeterministicUint32(seed, snapshotHash, step);
-    const selectedIndex = randUint % pool.length;
+    const selectedIndex = stream.sampleUnbiasedIndex(pool.length);
     const selectedParticipant = pool.splice(selectedIndex, 1)[0];
-
     const proofHash = generateWinnerProofHash(seed, snapshotHash, i + 1, selectedParticipant.platformUserId);
 
     winners.push({
@@ -79,71 +73,88 @@ export function executeDeterministicDraw(params: DrawExecutionParams): DrawExecu
       selectionIndex: selectedIndex,
       proofHash,
     });
-
-    step++;
+    winnerIds.push(selectedParticipant.platformUserId);
   }
 
-  // 5. Select Reserve Winners
+  // 4. Select Reserve Winners
   for (let i = 0; i < actualReserveCount; i++) {
-    const randUint = getDeterministicUint32(seed, snapshotHash, step);
-    const selectedIndex = randUint % pool.length;
+    const pos = winners.length + i + 1;
+    const selectedIndex = stream.sampleUnbiasedIndex(pool.length);
     const selectedParticipant = pool.splice(selectedIndex, 1)[0];
-
-    const proofHash = generateWinnerProofHash(seed, snapshotHash, winners.length + i + 1, selectedParticipant.platformUserId);
+    const proofHash = generateWinnerProofHash(seed, snapshotHash, pos, selectedParticipant.platformUserId);
 
     reserveWinners.push({
-      position: winners.length + i + 1,
+      position: pos,
       isReserve: true,
       participant: selectedParticipant,
       selectionIndex: selectedIndex,
       proofHash,
     });
-
-    step++;
+    reserveWinnerIds.push(selectedParticipant.platformUserId);
   }
 
+  const drawId = 'draw_' + randomBytes(8).toString('hex');
   const drawnAt = new Date().toISOString();
 
-  // 6. Compute overall verification signature
-  const verificationSignature = createHash('sha256')
-    .update(JSON.stringify({
-      giveawayId,
-      snapshotHash,
-      seed,
-      algorithm: ALGORITHM_NAME,
-      winnerIds: winners.map(w => w.participant.platformUserId),
-      reserveIds: reserveWinners.map(w => w.participant.platformUserId),
-    }))
-    .digest('hex');
+  // 5. Compute canonical auditHash
+  const auditHash = computeAuditHash({
+    algorithmVersion: ALGORITHM_VERSION_V1,
+    giveawayId,
+    snapshotId: snapshot.id,
+    seed,
+    participantsSnapshotHash: snapshotHash,
+    conditionsHash,
+    winnerIds,
+    reserveWinnerIds,
+    eligibleCount: eligible.length,
+    drawId,
+    drawnAt,
+  });
 
   return {
+    drawId,
     giveawayId,
+    snapshotId: snapshot.id,
     winners,
     reserveWinners,
-    totalEligibleCount: eligibleParticipants.length,
+    winnerIds,
+    reserveWinnerIds,
+    totalEligibleCount: eligible.length,
     totalLoadedCount,
     seedUsed: seed,
     participantsSnapshotHash: snapshotHash,
-    algorithm: ALGORITHM_NAME,
+    conditionsHash,
+    algorithmVersion: ALGORITHM_VERSION_V1,
     drawnAt,
-    verificationSignature,
+    auditHash,
   };
 }
 
 /**
- * Re-runs the draw algorithm with the given snapshot of participants and seed
- * to verify if the produced outcome matches the claimed outcome.
+ * Universal entrypoint (routes to active algorithm version V1)
+ */
+export function executeDeterministicDraw(params: DrawExecutionParams): DrawExecutionResult {
+  return executeDeterministicDrawV1(params);
+}
+
+/**
+ * Re-runs draw algorithm on a snapshot to verify identical outcome
  */
 export function verifyDrawResult(
-  eligibleParticipants: FilteredParticipant[],
+  snapshot: ParticipantSnapshotData,
   seed: string,
   claimedWinnersCount: number,
-  claimedReserveCount: number
-): { winners: Winner[]; reserveWinners: Winner[]; snapshotHash: string } {
-  const result = executeDeterministicDraw({
-    giveawayId: 'verification',
-    eligibleParticipants,
-    totalLoadedCount: eligibleParticipants.length,
+  claimedReserveCount: number,
+  algorithmVersion: string = ALGORITHM_VERSION_V1
+): { winners: Winner[]; reserveWinners: Winner[]; winnerIds: string[]; reserveWinnerIds: string[]; auditHash: string } {
+  if (algorithmVersion !== ALGORITHM_VERSION_V1) {
+    throw new Error(`Unsupported algorithm version for replay: ${algorithmVersion}`);
+  }
+
+  const result = executeDeterministicDrawV1({
+    giveawayId: snapshot.giveawayId,
+    snapshot,
+    totalLoadedCount: snapshot.participantCount,
     winnersCount: claimedWinnersCount,
     reserveWinnersCount: claimedReserveCount,
     seed,
@@ -153,6 +164,8 @@ export function verifyDrawResult(
   return {
     winners: result.winners,
     reserveWinners: result.reserveWinners,
-    snapshotHash: result.participantsSnapshotHash,
+    winnerIds: result.winnerIds,
+    reserveWinnerIds: result.reserveWinnerIds,
+    auditHash: result.auditHash,
   };
 }

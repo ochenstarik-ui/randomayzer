@@ -1,6 +1,6 @@
 import { PlatformType, PostMetadata } from '../../core/types/giveaway';
 import { RawParticipant } from '../../core/types/participant';
-import { FetchParticipantsParams, SocialMediaProvider } from '../types';
+import { FetchParticipantsParams, ProviderCapabilities, SocialMediaProvider } from '../types';
 import { parseVkPostUrl } from './vk-parser';
 
 interface VkApiResponse<T> {
@@ -13,6 +13,16 @@ interface VkApiResponse<T> {
 
 export class VkProvider implements SocialMediaProvider {
   readonly platform: PlatformType = 'VK';
+  readonly capabilities: ProviderCapabilities = {
+    likes: true,
+    comments: true,
+    reposts: false,
+    repostsNote: 'Сбор репостов ограничен политикой приватности VK для закрытых профилей',
+    subscriptions: true,
+    adminDetection: false,
+    adminDetectionNote: 'Требует расширенных прав администратора группы',
+  };
+
   private serviceToken?: string;
   private apiVersion = '5.199';
   private baseUrl = 'https://api.vk.com/method';
@@ -80,7 +90,6 @@ export class VkProvider implements SocialMediaProvider {
 
     const post = response.items[0];
 
-    // Find author name / avatar
     let authorName = `VK Wall ${ownerId}`;
     let authorAvatarUrl = undefined;
 
@@ -100,7 +109,6 @@ export class VkProvider implements SocialMediaProvider {
       }
     }
 
-    // Extract first image attachment if available
     let imageUrl = undefined;
     if (post.attachments && post.attachments.length > 0) {
       const photoAttachment = post.attachments.find((a: any) => a.type === 'photo');
@@ -171,7 +179,7 @@ export class VkProvider implements SocialMediaProvider {
         if (params.onProgress) {
           params.onProgress(participantsMap.size, totalLikes, 'Загрузка лайков...');
         }
-      } while (offset < totalLikes && offset < 5000); // capped for phase 1 protection
+      } while (offset < totalLikes && offset < 5000);
     }
 
     // 2. Fetch Comments
@@ -236,7 +244,6 @@ export class VkProvider implements SocialMediaProvider {
     const cleanGroupId = groupId.replace(/^-/, '');
     const resultMap = new Map<string, boolean>();
 
-    // Batch in chunks of 500 as supported by groups.isMember
     const chunkSize = 500;
     for (let i = 0; i < userIds.length; i += chunkSize) {
       const chunk = userIds.slice(i, i + chunkSize);

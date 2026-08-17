@@ -8,13 +8,11 @@ import {
   ShieldCheck, 
   Trophy, 
   ExternalLink, 
-  CheckCircle2, 
   Copy, 
   Check, 
-  Users, 
   Calendar,
-  Sparkles,
-  RefreshCw
+  RefreshCw,
+  Lock
 } from 'lucide-react';
 import { StoredGiveaway } from '@/lib/giveaway-store';
 
@@ -66,6 +64,7 @@ export default function GiveawayDetailPage() {
   }
 
   const drawResult = giveaway.drawResult;
+  const snapshot = giveaway.latestSnapshot;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -82,15 +81,9 @@ export default function GiveawayDetailPage() {
           <span className="text-xs px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
             VKontakte
           </span>
-          {giveaway.status === 'COMPLETED' ? (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-              Завершен
-            </span>
-          ) : (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
-              В процессе
-            </span>
-          )}
+          <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium font-mono">
+            {giveaway.status}
+          </span>
         </div>
       </div>
 
@@ -181,7 +174,18 @@ export default function GiveawayDetailPage() {
               </div>
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(drawResult, null, 2));
+                  navigator.clipboard.writeText(JSON.stringify({
+                    giveawayId: giveaway.id,
+                    snapshotId: drawResult.snapshotId,
+                    algorithmVersion: drawResult.algorithmVersion,
+                    seed: drawResult.seedUsed,
+                    participantsSnapshotHash: drawResult.participantsSnapshotHash,
+                    conditionsHash: drawResult.conditionsHash,
+                    auditHash: drawResult.auditHash,
+                    winnerIds: drawResult.winnerIds,
+                    reserveWinnerIds: drawResult.reserveWinnerIds,
+                    drawnAt: drawResult.drawnAt,
+                  }, null, 2));
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                 }}
@@ -194,16 +198,24 @@ export default function GiveawayDetailPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-slate-400">Seed розыгрыша:</span>
+                <span className="text-slate-400">Snapshot ID:</span>
+                <p className="font-mono text-slate-300 break-all">{drawResult.snapshotId}</p>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Алгоритм:</span>
+                <p className="font-mono text-amber-400 break-all">{drawResult.algorithmVersion}</p>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Seed:</span>
                 <p className="font-mono text-blue-400 break-all">{drawResult.seedUsed}</p>
               </div>
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-slate-400">Snapshot Hash (SHA-256):</span>
+                <span className="text-slate-400">Snapshot Hash:</span>
                 <p className="font-mono text-emerald-400 break-all">{drawResult.participantsSnapshotHash}</p>
               </div>
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 sm:col-span-2">
-                <span className="text-slate-400">Verification Signature:</span>
-                <p className="font-mono text-indigo-300 break-all">{drawResult.verificationSignature}</p>
+                <span className="text-slate-400">Канонический auditHash:</span>
+                <p className="font-mono text-indigo-300 break-all">{drawResult.auditHash}</p>
               </div>
             </div>
           </div>

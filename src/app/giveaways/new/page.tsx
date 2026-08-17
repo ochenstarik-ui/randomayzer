@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, 
   Sparkles, 
@@ -17,19 +16,17 @@ import {
   RefreshCw, 
   Shuffle, 
   Copy, 
-  ExternalLink,
-  Info,
-  Check,
-  Award,
-  AlertCircle
+  ExternalLink, 
+  Info, 
+  Check, 
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 import { FilterRules, DEFAULT_FILTER_RULES, PostMetadata } from '@/core/types/giveaway';
 import { FilteredParticipant, Winner } from '@/core/types/participant';
-import { DrawExecutionResult } from '@/core/types/audit';
+import { DrawExecutionResult, ParticipantSnapshotData } from '@/core/types/audit';
 
 export default function NewGiveawayWizardPage() {
-  const router = useRouter();
-
   // Wizard state
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
@@ -44,10 +41,12 @@ export default function NewGiveawayWizardPage() {
   const [rules, setRules] = useState<FilterRules>({ ...DEFAULT_FILTER_RULES });
   const [blacklistInput, setBlacklistInput] = useState('');
 
-  // Step 3: Participants
+  // Step 3: Participants & Snapshot
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [participants, setParticipants] = useState<FilteredParticipant[]>([]);
   const [participantTab, setParticipantTab] = useState<'all' | 'eligible' | 'excluded'>('eligible');
+  const [lockingSnapshot, setLockingSnapshot] = useState(false);
+  const [lockedSnapshot, setLockedSnapshot] = useState<ParticipantSnapshotData | null>(null);
 
   // Step 4: Draw parameters
   const [winnersCount, setWinnersCount] = useState<number>(1);
@@ -79,7 +78,6 @@ export default function NewGiveawayWizardPage() {
 
       setPostData(data.post);
 
-      // Create initial draft giveaway
       const createRes = await fetch('/api/giveaways', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,7 +99,7 @@ export default function NewGiveawayWizardPage() {
     }
   };
 
-  // Step 2 handler: Fetch Participants
+  // Step 2 handler: Fetch & Enrich Participants
   const handleFetchParticipants = async () => {
     if (!createdGiveawayId) return;
     setLoadingParticipants(true);
@@ -130,6 +128,30 @@ export default function NewGiveawayWizardPage() {
       alert(err.message);
     } finally {
       setLoadingParticipants(false);
+    }
+  };
+
+  // Step 3 handler: Lock Immutable Snapshot
+  const handleLockSnapshotAndProceed = async () => {
+    if (!createdGiveawayId) return;
+    setLockingSnapshot(true);
+
+    try {
+      const res = await fetch(`/api/giveaways/${createdGiveawayId}/snapshot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filterRules: rules }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка создания неизменяемого слепка');
+
+      setLockedSnapshot(data.snapshot);
+      setStep(4);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLockingSnapshot(false);
     }
   };
 
@@ -345,7 +367,7 @@ export default function NewGiveawayWizardPage() {
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Шаг 2: Условия участия</h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Отметьте действия, которые участники должны выполнить для участия в розыгрыше
+              Отметьте условия, которые будут проверены у участников
             </p>
           </div>
 
@@ -383,31 +405,12 @@ export default function NewGiveawayWizardPage() {
                   Оставил комментарий
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Требовать наличие как минимум 1 комментария
+                  Требовать наличие комментария под постом
                 </p>
               </div>
             </label>
 
-            {/* Condition: Repost */}
-            <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={rules.requireRepost}
-                onChange={(e) => setRules({ ...rules, requireRepost: e.target.checked })}
-                className="mt-1 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 bg-slate-900 border-slate-700"
-              />
-              <div>
-                <div className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Repeat2 className="w-4 h-4 text-emerald-400" />
-                  Сделал репост
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Проверять репост записи на открытую стену
-                </p>
-              </div>
-            </label>
-
-            {/* Condition: Subscription */}
+            {/* Condition: Subscription (Active & Supported) */}
             <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer transition-colors">
               <input
                 type="checkbox"
@@ -419,28 +422,12 @@ export default function NewGiveawayWizardPage() {
                 <div className="text-sm font-semibold text-white flex items-center gap-2">
                   <Users className="w-4 h-4 text-indigo-400" />
                   Подписка на сообщество
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded">
+                    VK API
+                  </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Проверять членство в группе организатора
-                </p>
-              </div>
-            </label>
-
-            {/* Filter: Exclude Admins */}
-            <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={rules.excludeAdmins}
-                onChange={(e) => setRules({ ...rules, excludeAdmins: e.target.checked })}
-                className="mt-1 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 bg-slate-900 border-slate-700"
-              />
-              <div>
-                <div className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-amber-400" />
-                  Исключить администраторов
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Не допускать к победе руководителей и контакты сообщества
+                  Реальная пакетная проверка членства через groups.isMember
                 </p>
               </div>
             </label>
@@ -463,6 +450,50 @@ export default function NewGiveawayWizardPage() {
                 </p>
               </div>
             </label>
+
+            {/* Condition: Repost (Explicitly Marked Unsupported by Capability) */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-950/40 border border-slate-800/50 opacity-60 cursor-not-allowed">
+              <input
+                type="checkbox"
+                disabled
+                checked={false}
+                className="mt-1 w-4 h-4 rounded text-slate-600 bg-slate-900 border-slate-700"
+              />
+              <div>
+                <div className="text-sm font-semibold text-slate-400 flex items-center gap-2">
+                  <Repeat2 className="w-4 h-4 text-slate-500" />
+                  Сделал репост
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">
+                    Ограничение VK API
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Не поддерживается VK API для закрытых профилей сторонними приложениями
+                </p>
+              </div>
+            </div>
+
+            {/* Filter: Exclude Admins */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-950/40 border border-slate-800/50 opacity-60 cursor-not-allowed">
+              <input
+                type="checkbox"
+                disabled
+                checked={false}
+                className="mt-1 w-4 h-4 rounded text-slate-600 bg-slate-900 border-slate-700"
+              />
+              <div>
+                <div className="text-sm font-semibold text-slate-400 flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-slate-500" />
+                  Исключить администраторов
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded">
+                    Этап 2 (OAuth)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Требует авторизации организатора через VK ID для доступа к списку контактов
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Blacklist IDs */}
@@ -494,24 +525,24 @@ export default function NewGiveawayWizardPage() {
               {loadingParticipants ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Загрузка участников...
+                  Загрузка и проверка...
                 </>
               ) : (
-                'Загрузить и отфильтровать участников →'
+                'Загрузить и проверить условия →'
               )}
             </button>
           </div>
         </div>
       )}
 
-      {/* ================= STEP 3: Participants Table ================= */}
+      {/* ================= STEP 3: Participants Table & Lock Snapshot ================= */}
       {step === 3 && (
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-white mb-1">Шаг 3: Проверка участников</h2>
               <p className="text-xs sm:text-sm text-slate-400">
-                Список загруженных пользователей и проверка выполнения условий
+                Список пользователей после применения фильтров и проверки подписок
               </p>
             </div>
 
@@ -559,7 +590,6 @@ export default function NewGiveawayWizardPage() {
                   <th className="py-3 px-4">VK ID</th>
                   <th className="py-3 px-4 text-center">Лайк</th>
                   <th className="py-3 px-4 text-center">Коммент</th>
-                  <th className="py-3 px-4 text-center">Репост</th>
                   <th className="py-3 px-4 text-center">Подписка</th>
                   <th className="py-3 px-4 text-right">Статус</th>
                 </tr>
@@ -592,13 +622,6 @@ export default function NewGiveawayWizardPage() {
                     <td className="py-3 px-4 text-center">
                       {p.commented ? (
                         <span className="text-blue-400 font-medium">{p.commentsCount || 1}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {p.reposted ? (
-                        <Check className="w-4 h-4 text-emerald-400 mx-auto" />
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}
@@ -640,11 +663,21 @@ export default function NewGiveawayWizardPage() {
               ← Назад к условиям
             </button>
             <button
-              onClick={() => setStep(4)}
-              disabled={eligibleParticipants.length === 0}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30"
+              onClick={handleLockSnapshotAndProceed}
+              disabled={lockingSnapshot || eligibleParticipants.length === 0}
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center gap-2"
             >
-              Перейти к розыгрышу ({eligibleParticipants.length} допущено) →
+              {lockingSnapshot ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Фиксация слепка...
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4" />
+                  Зафиксировать слепок и перейти к розыгрышу ({eligibleParticipants.length}) →
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -656,9 +689,22 @@ export default function NewGiveawayWizardPage() {
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Шаг 4: Настройки жеребьевки</h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Укажите количество победителей и параметры seed для криптографического выбора
+              Слепок участников зафиксирован (Статус: <span className="text-emerald-400 font-mono">SNAPSHOT_LOCKED</span>). Алгоритм: <span className="text-blue-400 font-mono">HMAC_SHA256_FY_V1</span>
             </p>
           </div>
+
+          {lockedSnapshot && (
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Snapshot ID:</span>
+                <span className="font-mono text-slate-300">{lockedSnapshot.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Хеш слепка участников (SHA-256):</span>
+                <span className="font-mono text-emerald-400 truncate max-w-xs">{lockedSnapshot.participantsSnapshotHash}</span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Winners Count */}
@@ -701,17 +747,17 @@ export default function NewGiveawayWizardPage() {
                 <Shuffle className="w-3.5 h-3.5 text-blue-400" />
                 Seed розыгрыша (опционально)
               </label>
-              <span className="text-[10px] text-slate-400">Для предварительной публикации</span>
+              <span className="text-[10px] text-slate-400">CSPRNG / crypto.randomBytes</span>
             </div>
             <input
               type="text"
-              placeholder="Оставьте пустым для автогенерации крипто-seed"
+              placeholder="Оставьте пустым для генерации крипто-стойкого CSPRNG seed"
               value={seed}
               onChange={(e) => setSeed(e.target.value)}
               className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-blue-500"
             />
             <p className="text-[11px] text-slate-400">
-              Если seed не указан, система сгенерирует случайный крипто-ключ в момент запуска
+              Если seed не задан вручную, система сгенерирует 128-битный криптографический ключ Node.js CSPRNG
             </p>
           </div>
 
@@ -720,7 +766,7 @@ export default function NewGiveawayWizardPage() {
               onClick={() => setStep(3)}
               className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
             >
-              ← Назад к участникам
+              ← Назад к списку
             </button>
             <button
               onClick={handleExecuteDraw}
@@ -756,7 +802,7 @@ export default function NewGiveawayWizardPage() {
               🎉 Поздравляем победителей!
             </h2>
             <p className="text-xs sm:text-sm text-slate-300 max-w-lg mx-auto mb-6">
-              Выборка произведена детерминированным алгоритмом HMAC-SHA256 среди {drawResult.totalEligibleCount} допущенных участников.
+              Выборка произведена алгоритмом {drawResult.algorithmVersion} среди {drawResult.totalEligibleCount} допущенных участников.
             </p>
 
             {/* Main Winners Cards */}
@@ -803,7 +849,7 @@ export default function NewGiveawayWizardPage() {
               ))}
             </div>
 
-            {/* Reserve Winners (if any) */}
+            {/* Reserve Winners */}
             {drawResult.reserveWinners.length > 0 && (
               <div className="mt-6 pt-6 border-t border-slate-800 max-w-2xl mx-auto text-left">
                 <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
@@ -837,14 +883,7 @@ export default function NewGiveawayWizardPage() {
               </div>
               <button
                 onClick={() => {
-                  const proofText = `Розыгрыш Randomayzer
-Giveaway ID: ${drawResult.giveawayId}
-Seed: ${drawResult.seedUsed}
-Snapshot Hash (SHA-256): ${drawResult.participantsSnapshotHash}
-Verification Signature: ${drawResult.verificationSignature}
-Алгоритм: ${drawResult.algorithm}
-Дата: ${drawResult.drawnAt}
-Победители: ${drawResult.winners.map(w => `${w.participant.firstName} ${w.participant.lastName} (id${w.participant.platformUserId})`).join(', ')}`;
+                  const proofText = JSON.stringify(drawResult, null, 2);
                   navigator.clipboard.writeText(proofText);
                   setCopiedProof(true);
                   setTimeout(() => setCopiedProof(false), 2000);
@@ -859,7 +898,7 @@ Verification Signature: ${drawResult.verificationSignature}
                 ) : (
                   <>
                     <Copy className="w-3.5 h-3.5" />
-                    Скопировать протокол
+                    Скопировать JSON аудита
                   </>
                 )}
               </button>
@@ -872,13 +911,23 @@ Verification Signature: ${drawResult.verificationSignature}
               </div>
 
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <span className="text-slate-400 font-medium">Алгоритм:</span>
+                <p className="font-mono text-amber-400 break-all">{drawResult.algorithmVersion}</p>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
                 <span className="text-slate-400 font-medium">Хеш участников (SHA-256):</span>
                 <p className="font-mono text-emerald-400 break-all">{drawResult.participantsSnapshotHash}</p>
               </div>
 
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <span className="text-slate-400 font-medium">Хеш условий (conditionsHash):</span>
+                <p className="font-mono text-purple-400 break-all">{drawResult.conditionsHash}</p>
+              </div>
+
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 sm:col-span-2">
-                <span className="text-slate-400 font-medium">Цифровая подпись верификации:</span>
-                <p className="font-mono text-indigo-300 break-all">{drawResult.verificationSignature}</p>
+                <span className="text-slate-400 font-medium">Канонический auditHash:</span>
+                <p className="font-mono text-indigo-300 break-all">{drawResult.auditHash}</p>
               </div>
             </div>
 

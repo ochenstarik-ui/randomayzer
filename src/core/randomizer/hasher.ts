@@ -1,39 +1,13 @@
-import { createHash } from 'crypto';
+import { randomBytes } from 'crypto';
 import { FilteredParticipant } from '../types/participant';
+import { computeParticipantsSnapshotHash, computeConditionsHash, computeAuditHash } from './canonical';
+
+export { computeParticipantsSnapshotHash, computeConditionsHash, computeAuditHash };
 
 /**
- * Computes a deterministic SHA-256 snapshot hash for a list of participants.
- * Participants are sorted canonically by platformUserId to guarantee identical hash
- * regardless of initial retrieval order.
+ * Generates a cryptographically secure random seed (128-bit / 32 hex chars) using CSPRNG.
+ * Math.random() is strictly forbidden in security-sensitive giveaway workflows.
  */
-export function computeParticipantsSnapshotHash(participants: FilteredParticipant[]): string {
-  // Canonical sort by platformUserId
-  const sorted = [...participants].sort((a, b) => 
-    a.platformUserId.localeCompare(b.platformUserId)
-  );
-
-  const canonicalRepresentation = sorted.map(p => ({
-    id: p.platformUserId,
-    name: `${p.firstName} ${p.lastName}`.trim(),
-    username: p.username || '',
-    actions: {
-      liked: p.liked,
-      commented: p.commented,
-      reposted: p.reposted,
-      subscribed: p.subscribed,
-    }
-  }));
-
-  const jsonString = JSON.stringify(canonicalRepresentation);
-  return createHash('sha256').update(jsonString, 'utf8').digest('hex');
-}
-
-/**
- * Generates a random crypto seed if not provided by user
- */
-export function generateRandomSeed(): string {
-  return createHash('sha256')
-    .update(`${Date.now()}-${Math.random()}-${process.pid}`)
-    .digest('hex')
-    .slice(0, 16);
+export function generateCryptoSecureSeed(): string {
+  return randomBytes(16).toString('hex');
 }

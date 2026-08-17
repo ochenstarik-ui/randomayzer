@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
 import { ProviderRegistry } from '@/providers/registry';
-import { applyFilterRules } from '@/core/filtering/filter-engine';
+import { executeParticipantPipeline } from '@/core/pipeline/participant-enricher';
 
 export async function POST(
   req: NextRequest,
@@ -19,7 +19,7 @@ export async function POST(
     const rules = body.filterRules || giveaway.filterRules;
     const provider = ProviderRegistry.getProvider(giveaway.platform);
 
-    // Fetch raw participants from provider
+    // 1. Fetch raw participants
     const rawParticipants = await provider.fetchParticipants({
       ownerId: giveaway.platformOwnerId,
       postId: giveaway.platformPostId,
@@ -27,13 +27,17 @@ export async function POST(
       includeLikes: true,
       includeComments: rules.requireComment,
       includeReposts: rules.requireRepost,
-      checkSubscription: rules.requireSubscription,
     });
 
-    // Apply filtering engine
-    const filterResult = applyFilterRules(rawParticipants, rules);
+    // 2. Run enrichment pipeline (subscription check + filter engine)
+    const filterResult = await executeParticipantPipeline({
+      rawParticipants,
+      rules,
+      provider,
+      ownerId: giveaway.platformOwnerId,
+    });
 
-    // Update participants in store
+    // 3. Save participants into persistent database
     await GiveawayStore.updateParticipants(id, filterResult.allParticipants);
 
     return NextResponse.json({

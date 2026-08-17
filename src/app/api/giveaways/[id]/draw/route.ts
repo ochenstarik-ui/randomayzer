@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
-import { executeDeterministicDraw } from '@/core/randomizer/deterministic';
-import { generateRandomSeed } from '@/core/randomizer/hasher';
+import { executeDeterministicDrawV1 } from '@/core/randomizer/deterministic';
+import { generateCryptoSecureSeed } from '@/core/randomizer/hasher';
+import { GiveawayFSM } from '@/core/fsm/giveaway-fsm';
 
 export async function POST(
   req: NextRequest,
@@ -16,22 +17,38 @@ export async function POST(
       return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
     }
 
-    const eligibleParticipants = giveaway.participants.filter(p => p.eligible);
-
-    if (eligibleParticipants.length === 0) {
-      return NextResponse.json({ 
-        error: 'Нет допущенных участников для проведения розыгрыша' 
+    // 1. Guard check with FSM
+    if (giveaway.status === 'DRAWN') {
+      return NextResponse.json({
+        error: 'Розыгрыш уже проведен. Повторный запуск строго запрещен.',
       }, { status: 400 });
     }
 
+    // 2. Fetch locked snapshot (or lock current eligible if ready)
+    let snapshot = await GiveawayStore.getLatestSnapshot(id);
+    if (!snapshot) {
+      const eligible = giveaway.participants.filter(p => p.eligible);
+      if (eligible.length === 0) {
+        return NextResponse.json({ 
+          error: 'Нет допущенных участников для создания слепка и розыгрыша' 
+        }, { status: 400 });
+      }
+      snapshot = await GiveawayStore.createAndLockSnapshot(id, eligible, giveaway.filterRules);
+    }
+
+    // Validate status after snapshot lock
+    GiveawayFSM.assertCanDraw('SNAPSHOT_LOCKED');
+
     const winnersCount = body.winnersCount || giveaway.winnersCount || 1;
     const reserveWinnersCount = body.reserveWinnersCount ?? giveaway.reserveWinnersCount ?? 0;
-    const seed = body.seed?.trim() || giveaway.seed || generateRandomSeed();
+    
+    // Seed must be generated with CSPRNG if not provided
+    const seed = body.seed?.trim() || giveaway.seed || generateCryptoSecureSeed();
 
-    // Execute provably fair draw
-    const drawResult = executeDeterministicDraw({
+    // 3. Execute Provably Fair Randomizer V1
+    const drawResult = executeDeterministicDrawV1({
       giveawayId: id,
-      eligibleParticipants,
+      snapshot,
       totalLoadedCount: giveaway.participants.length,
       winnersCount,
       reserveWinnersCount,
@@ -39,8 +56,8 @@ export async function POST(
       filterRules: giveaway.filterRules,
     });
 
-    // Persist result
-    const updatedGiveaway = await GiveawayStore.saveDrawResult(id, drawResult);
+    // 4. Persist DrawResult and AuditRecord atomically
+    const updatedGiveaway = await GiveawayStore.saveDrawResult(id, snapshot.id, drawResult);
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,13 @@
 export type PlatformType = 'VK' | 'TELEGRAM' | 'YOUTUBE';
 
-export type GiveawayStatusType = 'DRAFT' | 'FETCHING' | 'READY' | 'COMPLETED' | 'CANCELLED';
+export type GiveawayStatusType = 
+  | 'DRAFT'
+  | 'FETCHING'
+  | 'READY'
+  | 'SNAPSHOT_LOCKED'
+  | 'DRAWN'
+  | 'PUBLISHED'
+  | 'CANCELLED';
 
 export type ParticipantSourceType = 'LIKES' | 'COMMENTS' | 'REPOSTS' | 'COMBINED';
 
@@ -21,7 +28,7 @@ export const DEFAULT_FILTER_RULES: FilterRules = {
   requireComment: false,
   requireRepost: false,
   requireSubscription: false,
-  excludeAdmins: true,
+  excludeAdmins: false,
   excludeBlacklistedIds: [],
   excludeDuplicateComments: true,
   minEligibleParticipants: 1,

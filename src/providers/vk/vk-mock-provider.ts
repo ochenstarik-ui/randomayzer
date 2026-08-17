@@ -1,10 +1,19 @@
 import { PlatformType, PostMetadata } from '../../core/types/giveaway';
 import { RawParticipant } from '../../core/types/participant';
-import { FetchParticipantsParams, SocialMediaProvider } from '../types';
+import { FetchParticipantsParams, ProviderCapabilities, SocialMediaProvider } from '../types';
 import { parseVkPostUrl } from './vk-parser';
 
 export class VkMockProvider implements SocialMediaProvider {
   readonly platform: PlatformType = 'VK';
+  readonly capabilities: ProviderCapabilities = {
+    likes: true,
+    comments: true,
+    reposts: false,
+    repostsNote: 'Не поддерживается VK API из-за ограничений приватности закрытых профилей',
+    subscriptions: true,
+    adminDetection: false,
+    adminDetectionNote: 'Требует расширенных прав администратора сообщества',
+  };
 
   parsePostUrl(url: string): { ownerId: string; postId: string } | null {
     return parseVkPostUrl(url);
@@ -15,8 +24,7 @@ export class VkMockProvider implements SocialMediaProvider {
     const ownerId = parsed ? parsed.ownerId : '-22446688';
     const postId = parsed ? parsed.postId : '1054';
 
-    // Simulate short network latency
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 200));
 
     return {
       platform: 'VK',
@@ -36,15 +44,6 @@ export class VkMockProvider implements SocialMediaProvider {
   }
 
   async fetchParticipants(params: FetchParticipantsParams): Promise<RawParticipant[]> {
-    // Simulate pagination / progress
-    if (params.onProgress) {
-      params.onProgress(50, 150, 'Загрузка лайков...');
-      await new Promise(r => setTimeout(r, 200));
-      params.onProgress(100, 150, 'Загрузка комментариев...');
-      await new Promise(r => setTimeout(r, 200));
-      params.onProgress(150, 150, 'Проверка подписок...');
-    }
-
     const mockNames = [
       { first: 'Алексей', last: 'Смирнов', user: 'smirnov_alex' },
       { first: 'Екатерина', last: 'Иванова', user: 'katya_iva' },
@@ -75,18 +74,16 @@ export class VkMockProvider implements SocialMediaProvider {
 
     const participants: RawParticipant[] = [];
 
-    // Generate 35 mock participants with varied attributes
     for (let i = 1; i <= 35; i++) {
       const nameObj = mockNames[(i - 1) % mockNames.length];
       const userId = `${1000000 + i * 137}`;
       
-      // Determine varied conditions for realistic testing
-      const liked = i !== 7 && i !== 19; // 7 and 19 didn't like
-      const commented = i % 2 === 0 || i % 3 === 0; // some commented
-      const commentsCount = commented ? (i % 5 === 0 ? 3 : 1) : 0; // some wrote duplicate comments
-      const reposted = i % 3 === 0; // some reposted
-      const subscribed = i !== 13 && i !== 27; // 13 and 27 not subscribed
-      const isAdmin = i === 1; // Participant 1 is admin
+      const liked = i !== 7 && i !== 19;
+      const commented = i % 2 === 0 || i % 3 === 0;
+      const commentsCount = commented ? (i % 5 === 0 ? 3 : 1) : 0;
+      const reposted = false; // explicitly false as per capabilities
+      const subscribed = false; // will be resolved via checkSubscription
+      const isAdmin = false;
 
       participants.push({
         platformUserId: userId,
@@ -110,7 +107,9 @@ export class VkMockProvider implements SocialMediaProvider {
   async checkSubscription(userIds: string[], groupId: string): Promise<Map<string, boolean>> {
     const result = new Map<string, boolean>();
     for (const id of userIds) {
-      result.set(id, id !== '1001781'); // mock
+      // Mock: users ending in 0 or 5 are not subscribed, others are subscribed
+      const num = parseInt(id, 10);
+      result.set(id, num % 5 !== 0);
     }
     return result;
   }

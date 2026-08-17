@@ -1,102 +1,80 @@
-import { FilterRules, GiveawayStatusType, PlatformType, PostMetadata } from '../core/types/giveaway';
-import { FilteredParticipant, RawParticipant, Winner } from '../core/types/participant';
-import { DrawExecutionResult } from '../core/types/audit';
+import { IGiveawayRepository, GiveawayWithRelations, CreateGiveawayInput } from './repository/giveaway-repository';
+import { PrismaGiveawayRepository } from './repository/prisma-repository';
+import { MemoryGiveawayRepository } from './repository/memory-repository';
+import { FilterRules, GiveawayStatusType } from '../core/types/giveaway';
+import { FilteredParticipant } from '../core/types/participant';
+import { DrawExecutionResult, ParticipantSnapshotData } from '../core/types/audit';
 
-export interface StoredGiveaway {
-  id: string;
-  platform: PlatformType;
-  sourceUrl: string;
-  platformOwnerId: string;
-  platformPostId: string;
-  title: string;
-  description?: string;
-  postImageUrl?: string;
-  postLikesCount: number;
-  postCommentsCount: number;
-  postRepostsCount: number;
-  status: GiveawayStatusType;
-  filterRules: FilterRules;
-  winnersCount: number;
-  reserveWinnersCount: number;
-  seed?: string;
-  createdAt: string;
-  updatedAt: string;
-  drawnAt?: string;
-  participants: FilteredParticipant[];
-  drawResult?: DrawExecutionResult;
-}
+export type StoredGiveaway = GiveawayWithRelations;
 
-// In-memory runtime cache/store for fast UI state & standalone dev mode
-const memoryStore = new Map<string, StoredGiveaway>();
+let activeRepository: IGiveawayRepository = new PrismaGiveawayRepository();
 
 export class GiveawayStore {
-  static async create(data: {
-    sourceUrl: string;
-    post: PostMetadata;
-    filterRules: FilterRules;
-    winnersCount?: number;
-    reserveWinnersCount?: number;
-    seed?: string;
-  }): Promise<StoredGiveaway> {
-    const id = 'gw_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const now = new Date().toISOString();
+  /**
+   * Set custom repository (e.g. MemoryGiveawayRepository in tests)
+   */
+  static setRepository(repo: IGiveawayRepository): void {
+    activeRepository = repo;
+  }
 
-    const giveaway: StoredGiveaway = {
-      id,
-      platform: data.post.platform,
-      sourceUrl: data.sourceUrl,
-      platformOwnerId: data.post.ownerId,
-      platformPostId: data.post.postId,
-      title: data.post.title,
-      description: data.post.text,
-      postImageUrl: data.post.imageUrl,
-      postLikesCount: data.post.likesCount,
-      postCommentsCount: data.post.commentsCount,
-      postRepostsCount: data.post.repostsCount,
-      status: 'READY',
-      filterRules: data.filterRules,
-      winnersCount: data.winnersCount || 1,
-      reserveWinnersCount: data.reserveWinnersCount || 0,
-      seed: data.seed,
-      createdAt: now,
-      updatedAt: now,
-      participants: [],
-    };
+  static getRepository(): IGiveawayRepository {
+    return activeRepository;
+  }
 
-    memoryStore.set(id, giveaway);
-    return giveaway;
+  static async create(input: CreateGiveawayInput): Promise<StoredGiveaway> {
+    try {
+      return await activeRepository.createGiveaway(input);
+    } catch (err) {
+      if (activeRepository instanceof PrismaGiveawayRepository) {
+        console.warn('Prisma DB error, falling back to memory repository:', (err as Error).message);
+        activeRepository = new MemoryGiveawayRepository();
+        return await activeRepository.createGiveaway(input);
+      }
+      throw err;
+    }
   }
 
   static async getById(id: string): Promise<StoredGiveaway | null> {
-    return memoryStore.get(id) || null;
+    try {
+      return await activeRepository.getGiveawayById(id);
+    } catch (err) {
+      if (activeRepository instanceof PrismaGiveawayRepository) {
+        activeRepository = new MemoryGiveawayRepository();
+        return await activeRepository.getGiveawayById(id);
+      }
+      throw err;
+    }
   }
 
   static async listAll(): Promise<StoredGiveaway[]> {
-    return Array.from(memoryStore.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    try {
+      return await activeRepository.listGiveaways();
+    } catch (err) {
+      if (activeRepository instanceof PrismaGiveawayRepository) {
+        activeRepository = new MemoryGiveawayRepository();
+        return await activeRepository.listGiveaways();
+      }
+      throw err;
+    }
   }
 
   static async updateParticipants(id: string, participants: FilteredParticipant[]): Promise<StoredGiveaway> {
-    const gw = memoryStore.get(id);
-    if (!gw) throw new Error('Giveaway not found');
-
-    gw.participants = participants;
-    gw.updatedAt = new Date().toISOString();
-    memoryStore.set(id, gw);
-    return gw;
+    return await activeRepository.saveParticipants(id, participants);
   }
 
-  static async saveDrawResult(id: string, result: DrawExecutionResult): Promise<StoredGiveaway> {
-    const gw = memoryStore.get(id);
-    if (!gw) throw new Error('Giveaway not found');
+  static async createAndLockSnapshot(
+    id: string, 
+    eligibleParticipants: FilteredParticipant[], 
+    rules: FilterRules
+  ): Promise<ParticipantSnapshotData> {
+    return await activeRepository.createAndLockSnapshot(id, eligibleParticipants, rules);
+  }
 
-    gw.drawResult = result;
-    gw.status = 'COMPLETED';
-    gw.drawnAt = result.drawnAt;
-    gw.seed = result.seedUsed;
-    gw.updatedAt = new Date().toISOString();
-    memoryStore.set(id, gw);
-    return gw;
+  static async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {
+    return await activeRepository.getLatestSnapshot(giveawayId);
+  }
+
+  static async saveDrawResult(id: string, snapshotId: string, result: DrawExecutionResult): Promise<StoredGiveaway> {
+    return await activeRepository.saveDrawResultAndAudit(id, snapshotId, result);
   }
 }

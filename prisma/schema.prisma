@@ -17,7 +17,9 @@ enum GiveawayStatus {
   DRAFT
   FETCHING
   READY
-  COMPLETED
+  SNAPSHOT_LOCKED
+  DRAWN
+  PUBLISHED
   CANCELLED
 }
 
@@ -29,27 +31,28 @@ enum ParticipantSource {
 }
 
 model Giveaway {
-  id                  String         @id @default(cuid())
-  platform            Platform       @default(VK)
+  id                  String               @id @default(cuid())
+  platform            Platform             @default(VK)
   sourceUrl           String
   platformOwnerId     String
   platformPostId      String
   title               String
   description         String?
   postImageUrl        String?
-  postLikesCount      Int            @default(0)
-  postCommentsCount   Int            @default(0)
-  postRepostsCount    Int            @default(0)
-  status              GiveawayStatus @default(DRAFT)
-  filterRules         Json           // FilterRules object
-  winnersCount        Int            @default(1)
-  reserveWinnersCount Int            @default(0)
+  postLikesCount      Int                  @default(0)
+  postCommentsCount   Int                  @default(0)
+  postRepostsCount    Int                  @default(0)
+  status              GiveawayStatus       @default(DRAFT)
+  filterRules         Json                 // FilterRules object
+  winnersCount        Int                  @default(1)
+  reserveWinnersCount Int                  @default(0)
   seed                String?
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
   drawnAt             DateTime?
 
   participants        Participant[]
+  snapshots           ParticipantSnapshot[]
   drawResult          DrawResult?
   auditRecord         AuditRecord?
 
@@ -79,28 +82,57 @@ model Participant {
   @@index([giveawayId, eligible])
 }
 
+model ParticipantSnapshot {
+  id                       String       @id @default(cuid())
+  giveawayId               String
+  giveaway                 Giveaway     @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  version                  Int          @default(1)
+  createdAt                DateTime     @default(now())
+  eligibleParticipants     Json         // Canonical JSON array of FilteredParticipant
+  participantCount         Int
+  participantsSnapshotHash String
+  conditionsHash           String
+
+  drawResult               DrawResult?
+  auditRecord              AuditRecord?
+
+  @@unique([giveawayId, version])
+  @@index([giveawayId])
+}
+
 model DrawResult {
-  id                 String   @id @default(cuid())
-  giveawayId         String   @unique
-  giveaway           Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
-  winners            Json     // Array of Winner entities
-  reserveWinners     Json     // Array of Winner entities
+  id                 String              @id @default(cuid())
+  giveawayId         String              @unique
+  giveaway           Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  snapshotId         String              @unique
+  snapshot           ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  winners            Json                // Array of Winner entities
+  reserveWinners     Json                // Array of Winner entities
+  winnerIds          Json                // string[]
+  reserveWinnerIds   Json                // string[]
   totalEligibleCount Int
   totalLoadedCount   Int
   seedUsed           String
-  algorithm          String   @default("HMAC-SHA256-FISHER-YATES")
-  drawnAt            DateTime @default(now())
+  algorithmVersion   String              @default("HMAC_SHA256_FY_V1")
+  auditHash          String
+  drawnAt            DateTime            @default(now())
 }
 
 model AuditRecord {
-  id                       String   @id @default(cuid())
-  giveawayId               String   @unique
-  giveaway                 Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
-  participantsSnapshotHash String
+  id                       String              @id @default(cuid())
+  giveawayId               String              @unique
+  giveaway                 Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  snapshotId               String              @unique
+  snapshot                 ParticipantSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  algorithmVersion         String              @default("HMAC_SHA256_FY_V1")
   seed                     String
-  algorithm                String   @default("HMAC-SHA256-FISHER-YATES")
-  filterRulesSnapshot      Json
-  winnersSnapshot          Json
-  verifiedAt               DateTime @default(now())
-  verificationSignature    String
+  participantsSnapshotHash String
+  conditionsHash           String
+  auditHash                String
+  winnerIds                Json                // string[]
+  reserveWinnerIds         Json                // string[]
+  eligibleCount            Int
+  drawId                   String
+  drawnAt                  DateTime            @default(now())
+  verifiedAt               DateTime            @default(now())
 }

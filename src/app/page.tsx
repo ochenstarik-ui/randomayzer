@@ -12,7 +12,6 @@ import {
   ShieldCheck, 
   ArrowRight,
   RefreshCw,
-  ExternalLink
 } from 'lucide-react';
 import { StoredGiveaway } from '@/lib/giveaway-store';
 
@@ -39,7 +38,7 @@ export default function DashboardPage() {
     fetchGiveaways();
   }, []);
 
-  const completedCount = giveaways.filter(g => g.status === 'COMPLETED').length;
+  const completedCount = giveaways.filter(g => g.status === 'DRAWN' || g.status === 'PUBLISHED').length;
   const totalEligible = giveaways.reduce((acc, g) => acc + (g.drawResult?.totalEligibleCount || 0), 0);
 
   return (
@@ -55,8 +54,8 @@ export default function DashboardPage() {
             Честный рандомайзер с доказуемым результатом
           </h1>
           <p className="text-slate-300 text-sm sm:text-base mb-6 leading-relaxed">
-            Выбирайте победителей по лайкам, комментариям и репостам. 
-            Каждый розыгрыш фиксируется криптографическим хешем и seed для 100% прозрачности.
+            Выбирайте победителей по лайкам и комментариям. 
+            Каждый розыгрыш фиксируется неизменяемым слепком (Snapshot) и криптографическим auditHash (HMAC-SHA256).
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <Link
@@ -127,7 +126,7 @@ export default function DashboardPage() {
             <Gift className="w-10 h-10 text-slate-400 mx-auto mb-3" />
             <p className="text-sm text-slate-300 font-medium mb-1">Пока нет созданных розыгрышей</p>
             <p className="text-xs text-slate-400 mb-4 max-w-sm mx-auto">
-              Вставьте ссылку на пост ВКонтакте, чтобы загрузить участников и определить победителя
+              Вставьте ссылку на пост ВКонтакте, чтобы загрузить участников и зафиксировать результат
             </p>
             <Link
               href="/giveaways/new"
@@ -166,15 +165,20 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                  {gw.status === 'COMPLETED' ? (
+                  {gw.status === 'DRAWN' || gw.status === 'PUBLISHED' ? (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       <CheckCircle2 className="w-3 h-3" />
-                      Завершен
+                      {gw.status}
+                    </span>
+                  ) : gw.status === 'SNAPSHOT_LOCKED' ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      <Clock className="w-3 h-3" />
+                      Слепок зафиксирован
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
                       <Clock className="w-3 h-3" />
-                      Готов к проведению
+                      {gw.status}
                     </span>
                   )}
 
@@ -202,8 +206,8 @@ export default function DashboardPage() {
             Как гарантируется честность результатов?
           </h3>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Перед жеребьевкой список участников сортируется и хешируется по стандарту SHA-256. 
-            Победитель определяется алгоритмом HMAC-SHA256 на основе фиксированного seed. Любой зритель может воспроизвести результат и проверить неизменность выборки.
+            Перед жеребьевкой список участников фиксируется в неизменяемый слепок и хешируется по стандарту SHA-256. 
+            Победитель определяется алгоритмом HMAC_SHA256_FY_V1 с rejection sampling. Любой зритель может воспроизвести результат и проверить неизменность выборки.
           </p>
         </div>
       </div>

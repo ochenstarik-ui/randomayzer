@@ -1,6 +1,16 @@
 import { PlatformType, PostMetadata } from '../core/types/giveaway';
 import { RawParticipant } from '../core/types/participant';
 
+export interface ProviderCapabilities {
+  likes: boolean;
+  comments: boolean;
+  reposts: boolean;
+  subscriptions: boolean;
+  adminDetection: boolean;
+  repostsNote?: string;
+  adminDetectionNote?: string;
+}
+
 export interface FetchParticipantsParams {
   ownerId: string;
   postId: string;
@@ -9,13 +19,13 @@ export interface FetchParticipantsParams {
   includeLikes?: boolean;
   includeComments?: boolean;
   includeReposts?: boolean;
-  checkSubscription?: boolean;
   onProgress?: (loaded: number, total: number, message: string) => void;
 }
 
 export interface SocialMediaProvider {
   readonly platform: PlatformType;
-  
+  readonly capabilities: ProviderCapabilities;
+
   /**
    * Parse a raw URL from the user into ownerId and postId
    */
