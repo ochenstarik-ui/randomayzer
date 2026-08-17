@@ -5,6 +5,7 @@ import { handleApiError } from '@/core/errors/http-errors';
 import { generalApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
+import { getSessionFromRequest } from '@/lib/auth/session';
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +44,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const sessionUser = await getSessionFromRequest(req);
+
     const giveaway = await GiveawayStore.create({
       sourceUrl: validated.sourceUrl,
       post: validated.post,
@@ -50,6 +53,7 @@ export async function POST(req: NextRequest) {
       winnersCount: validated.winnersCount,
       reserveWinnersCount: validated.reserveWinnersCount,
       seed: validated.seed,
+      organizerId: sessionUser?.id,
     });
 
     const responseBody = {

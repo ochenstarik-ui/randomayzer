@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
 import { Gift, ShieldCheck, PlusCircle, LayoutDashboard } from 'lucide-react';
+import { AuthButton } from '@/components/auth/AuthButton';
 
 export const metadata: Metadata = {
   title: 'Randomayzer — Доказуемые розыгрыши ВКонтакте',
@@ -36,18 +37,22 @@ export default function RootLayout({
             <nav className="flex items-center gap-3">
               <Link
                 href="/"
-                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-lg transition-colors"
               >
                 <LayoutDashboard className="w-4 h-4" />
-                Дашборд
+                <span className="hidden sm:inline">Дашборд</span>
               </Link>
               <Link
                 href="/giveaways/new"
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md shadow-blue-600/25 active:scale-95"
+                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all shadow-md shadow-blue-600/25 active:scale-95"
               >
                 <PlusCircle className="w-4 h-4" />
-                Новый розыгрыш
+                <span className="hidden sm:inline">Новый розыгрыш</span>
               </Link>
+              
+              <div className="ml-2 pl-2 border-l border-slate-800">
+                <AuthButton />
+              </div>
             </nav>
           </div>
         </header>
@@ -65,7 +70,7 @@ export default function RootLayout({
               <span>Provably Fair Engine • Криптографически доказуемый выбор</span>
             </div>
             <p className="text-xs text-slate-400">
-              Randomayzer Core v1.0 • Этап 1
+              Randomayzer Core v1.0 • Этап 2.2 VK ID
             </p>
           </div>
         </footer>
