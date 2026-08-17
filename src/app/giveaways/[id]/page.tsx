@@ -201,6 +201,7 @@ export default function GiveawayDetailPage() {
                   onClick={() => {
                     navigator.clipboard.writeText(JSON.stringify({
                       giveawayId: giveaway.id,
+                      drawId: drawResult.drawId,
                       snapshotId: drawResult.snapshotId,
                       algorithmVersion: drawResult.algorithmVersion,
                       seed: drawResult.seedUsed,
@@ -243,16 +244,22 @@ export default function GiveawayDetailPage() {
                     </>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 font-mono text-[11px]">
+                  <div>Целостность участников: {verificationResult.participantsSnapshotIntegrity ? 'ДА ✓' : 'НЕТ ✗'}</div>
+                  <div>Целостность условий: {verificationResult.conditionsIntegrity ? 'ДА ✓' : 'НЕТ ✗'}</div>
                   <div>Победители совпали: {verificationResult.winnersMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
-                  <div>Хеш слепка совпал: {verificationResult.snapshotHashMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
-                  <div>Хеш условий совпал: {verificationResult.conditionsHashMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
+                  <div>Резерв совпал: {verificationResult.reserveWinnersMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
                   <div>Proof Hash совпал: {verificationResult.deterministicProofHashMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
+                  <div>Event Hash совпал: {verificationResult.auditEventHashMatch ? 'ДА ✓' : 'НЕТ ✗'}</div>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Draw ID:</span>
+                <p className="font-mono text-amber-300 break-all">{drawResult.drawId}</p>
+              </div>
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                 <span className="text-slate-400">Snapshot ID:</span>
                 <p className="font-mono text-slate-300 break-all">{drawResult.snapshotId}</p>
@@ -268,6 +275,10 @@ export default function GiveawayDetailPage() {
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                 <span className="text-slate-400">Snapshot Hash:</span>
                 <p className="font-mono text-emerald-400 break-all">{drawResult.participantsSnapshotHash}</p>
+              </div>
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Conditions Hash:</span>
+                <p className="font-mono text-purple-400 break-all">{drawResult.conditionsHash}</p>
               </div>
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 sm:col-span-2">
                 <span className="text-slate-400">deterministicProofHash (воспроизводимый):</span>

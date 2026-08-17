@@ -131,6 +131,7 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       version: newVersion,
       createdAt: new Date().toISOString(),
       eligibleParticipants: [...eligibleParticipants],
+      filterRulesSnapshot: { ...rules },
       participantCount: eligibleParticipants.length,
       participantsSnapshotHash,
       conditionsHash,

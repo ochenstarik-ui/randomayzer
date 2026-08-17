@@ -34,6 +34,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       version: s.version,
       createdAt: s.createdAt.toISOString(),
       eligibleParticipants: s.eligibleParticipants as FilteredParticipant[],
+      filterRulesSnapshot: s.filterRulesSnapshot as FilterRules,
       participantCount: s.participantCount,
       participantsSnapshotHash: s.participantsSnapshotHash,
       conditionsHash: s.conditionsHash,
@@ -54,7 +55,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         : snapshots.find(s => s.id === raw.drawResult.snapshotId) || latestSnapshot;
 
       drawResult = {
-        drawId: raw.drawResult.id,
+        drawId: raw.drawResult.drawId || raw.drawResult.id,
         giveawayId: raw.drawResult.giveawayId,
         snapshotId: raw.drawResult.snapshotId,
         winners: raw.drawResult.winners as any,
@@ -256,6 +257,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
           giveawayId: id,
           version: newVersion,
           eligibleParticipants: eligibleParticipants as any,
+          filterRulesSnapshot: rules as any,
           participantCount: eligibleParticipants.length,
           participantsSnapshotHash,
           conditionsHash,
@@ -276,6 +278,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       version: snapshot.version,
       createdAt: snapshot.createdAt.toISOString(),
       eligibleParticipants: eligibleParticipants,
+      filterRulesSnapshot: rules,
       participantCount: snapshot.participantCount,
       participantsSnapshotHash: snapshot.participantsSnapshotHash,
       conditionsHash: snapshot.conditionsHash,
@@ -296,6 +299,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       version: snap.version,
       createdAt: snap.createdAt.toISOString(),
       eligibleParticipants: snap.eligibleParticipants as any,
+      filterRulesSnapshot: snap.filterRulesSnapshot as any,
       participantCount: snap.participantCount,
       participantsSnapshotHash: snap.participantsSnapshotHash,
       conditionsHash: snap.conditionsHash,
@@ -313,9 +317,10 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     GiveawayFSM.assertCanDraw(current.status);
 
     await prisma.$transaction(async (tx) => {
-      // 1. Create DrawResult
+      // 1. Create DrawResult with original drawId
       await tx.drawResult.create({
         data: {
+          drawId: result.drawId,
           giveawayId: id,
           snapshotId: snapshotId,
           winners: result.winners as any,

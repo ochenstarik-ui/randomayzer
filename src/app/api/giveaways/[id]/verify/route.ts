@@ -21,13 +21,14 @@ export async function GET(
       }, { status: 400 });
     }
 
-    // Find the snapshot associated with this draw
-    const snapshot = giveaway.snapshots.find(s => s.id === drawResult.snapshotId) 
-      || giveaway.latestSnapshot;
+    // Strict snapshot lookup: DO NOT fallback to latestSnapshot
+    const snapshot = giveaway.snapshots.find(s => s.id === drawResult.snapshotId);
 
     if (!snapshot) {
       return NextResponse.json({ 
-        error: `Participant snapshot "${drawResult.snapshotId}" not found for this giveaway` 
+        error: `Integrity Error: Participant snapshot "${drawResult.snapshotId}" referenced by draw does not exist in storage`,
+        verified: false,
+        snapshotFound: false,
       }, { status: 404 });
     }
 
@@ -35,29 +36,38 @@ export async function GET(
     const claimedReserveCount = drawResult.reserveWinners.length;
 
     // Run independent cryptographic replay verification
-    const verification = verifyDrawResult(
+    const verification = verifyDrawResult({
+      giveawayId: id,
+      drawId: drawResult.drawId,
+      drawnAt: drawResult.drawnAt,
       snapshot,
-      drawResult.seedUsed,
+      seed: drawResult.seedUsed,
       claimedWinnersCount,
       claimedReserveCount,
-      drawResult.winnerIds,
-      drawResult.deterministicProofHash,
-      drawResult.algorithmVersion
-    );
+      claimedWinnerIds: drawResult.winnerIds,
+      claimedReserveWinnerIds: drawResult.reserveWinnerIds,
+      claimedDeterministicProofHash: drawResult.deterministicProofHash,
+      claimedAuditEventHash: drawResult.auditEventHash,
+      algorithmVersion: drawResult.algorithmVersion,
+    });
 
     return NextResponse.json({
       verified: verification.verified,
       giveawayId: id,
+      drawId: drawResult.drawId,
       snapshotId: snapshot.id,
       algorithmVersion: verification.algorithmVersion,
+      algorithmSupported: verification.algorithmSupported,
+      participantsSnapshotIntegrity: verification.participantsSnapshotIntegrity,
+      conditionsIntegrity: verification.conditionsIntegrity,
       winnersMatch: verification.winnersMatch,
-      snapshotHashMatch: verification.snapshotHashMatch,
-      conditionsHashMatch: verification.conditionsHashMatch,
+      reserveWinnersMatch: verification.reserveWinnersMatch,
       deterministicProofHashMatch: verification.deterministicProofHashMatch,
+      auditEventHashMatch: verification.auditEventHashMatch,
       expectedWinnerIds: verification.expectedWinnerIds,
       expectedReserveWinnerIds: verification.expectedReserveWinnerIds,
       deterministicProofHash: verification.expectedDeterministicProofHash,
-      auditEventHash: drawResult.auditEventHash,
+      auditEventHash: verification.expectedAuditEventHash,
       drawnAt: drawResult.drawnAt,
     });
   } catch (error: any) {

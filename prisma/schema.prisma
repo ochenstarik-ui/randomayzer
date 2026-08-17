@@ -89,6 +89,7 @@ model ParticipantSnapshot {
   version                  Int          @default(1)
   createdAt                DateTime     @default(now())
   eligibleParticipants     Json         // Canonical JSON array of FilteredParticipant
+  filterRulesSnapshot      Json         // Canonical JSON snapshot of FilterRules
   participantCount         Int
   participantsSnapshotHash String
   conditionsHash           String
@@ -102,6 +103,7 @@ model ParticipantSnapshot {
 
 model DrawResult {
   id                     String              @id @default(cuid())
+  drawId                 String              // Original domain drawId (e.g. draw_8f9102ab...)
   giveawayId             String              @unique
   giveaway               Giveaway            @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
   snapshotId             String              @unique

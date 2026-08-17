@@ -10,6 +10,7 @@ export interface ParticipantSnapshotData {
   version: number;
   createdAt: string;
   eligibleParticipants: FilteredParticipant[];
+  filterRulesSnapshot: FilterRules;
   participantCount: number;
   participantsSnapshotHash: string;
   conditionsHash: string;
@@ -62,17 +63,37 @@ export interface AuditRecordData {
   verifiedAt: string;
 }
 
+export interface VerificationParams {
+  giveawayId: string;
+  drawId: string;
+  drawnAt: string;
+  snapshot: ParticipantSnapshotData;
+  seed: string;
+  claimedWinnersCount: number;
+  claimedReserveCount: number;
+  claimedWinnerIds: string[];
+  claimedReserveWinnerIds: string[];
+  claimedDeterministicProofHash: string;
+  claimedAuditEventHash: string;
+  algorithmVersion?: string;
+}
+
 export interface VerificationResult {
   verified: boolean;
   algorithmVersion: string;
+  algorithmSupported: boolean;
+  participantsSnapshotIntegrity: boolean;
+  conditionsIntegrity: boolean;
   winnersMatch: boolean;
-  snapshotHashMatch: boolean;
-  conditionsHashMatch: boolean;
+  reserveWinnersMatch: boolean;
   deterministicProofHashMatch: boolean;
+  auditEventHashMatch: boolean;
   expectedWinners: Winner[];
   expectedReserveWinners: Winner[];
   expectedWinnerIds: string[];
   expectedReserveWinnerIds: string[];
   expectedDeterministicProofHash: string;
+  expectedAuditEventHash: string;
   actualDeterministicProofHash: string;
+  actualAuditEventHash: string;
 }

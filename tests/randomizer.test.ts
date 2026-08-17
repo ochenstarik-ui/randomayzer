@@ -29,6 +29,7 @@ function createMockSnapshot(count: number): ParticipantSnapshotData {
     version: 1,
     createdAt: new Date().toISOString(),
     eligibleParticipants: eligible,
+    filterRulesSnapshot: { ...DEFAULT_FILTER_RULES },
     participantCount: count,
     participantsSnapshotHash: computeParticipantsSnapshotHash(eligible),
     conditionsHash: computeConditionsHash(DEFAULT_FILTER_RULES),
@@ -162,15 +163,20 @@ describe('Deterministic Randomizer V1 (HMAC_SHA256_FY_V1)', () => {
       filterRules: DEFAULT_FILTER_RULES,
     });
 
-    const verification = verifyDrawResult(
+    const verification = verifyDrawResult({
+      giveawayId: 'gw-audit',
+      drawId: originalDraw.drawId,
+      drawnAt: originalDraw.drawnAt,
       snapshot,
       seed,
-      2,
-      2,
-      originalDraw.winnerIds,
-      originalDraw.deterministicProofHash,
-      ALGORITHM_VERSION_V1
-    );
+      claimedWinnersCount: 2,
+      claimedReserveCount: 2,
+      claimedWinnerIds: originalDraw.winnerIds,
+      claimedReserveWinnerIds: originalDraw.reserveWinnerIds,
+      claimedDeterministicProofHash: originalDraw.deterministicProofHash,
+      claimedAuditEventHash: originalDraw.auditEventHash,
+      algorithmVersion: ALGORITHM_VERSION_V1,
+    });
 
     expect(verification.verified).toBe(true);
     expect(verification.expectedWinnerIds).toEqual(originalDraw.winnerIds);

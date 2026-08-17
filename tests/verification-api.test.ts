@@ -54,6 +54,7 @@ describe('Verification API Replay Engine', () => {
     version: 1,
     createdAt: '2026-08-17T12:00:00.000Z',
     eligibleParticipants: participants,
+    filterRulesSnapshot: { ...DEFAULT_FILTER_RULES },
     participantCount: 3,
     participantsSnapshotHash: computeParticipantsSnapshotHash(participants),
     conditionsHash: computeConditionsHash(DEFAULT_FILTER_RULES),
@@ -71,21 +72,28 @@ describe('Verification API Replay Engine', () => {
       seed,
     });
 
-    const result = verifyDrawResult(
+    const result = verifyDrawResult({
+      giveawayId: 'gw-verif-1',
+      drawId: draw.drawId,
+      drawnAt: draw.drawnAt,
       snapshot,
       seed,
-      1,
-      1,
-      draw.winnerIds,
-      draw.deterministicProofHash,
-      draw.algorithmVersion
-    );
+      claimedWinnersCount: 1,
+      claimedReserveCount: 1,
+      claimedWinnerIds: draw.winnerIds,
+      claimedReserveWinnerIds: draw.reserveWinnerIds,
+      claimedDeterministicProofHash: draw.deterministicProofHash,
+      claimedAuditEventHash: draw.auditEventHash,
+      algorithmVersion: draw.algorithmVersion,
+    });
 
     expect(result.verified).toBe(true);
     expect(result.winnersMatch).toBe(true);
+    expect(result.reserveWinnersMatch).toBe(true);
     expect(result.deterministicProofHashMatch).toBe(true);
-    expect(result.snapshotHashMatch).toBe(true);
-    expect(result.conditionsHashMatch).toBe(true);
+    expect(result.auditEventHashMatch).toBe(true);
+    expect(result.participantsSnapshotIntegrity).toBe(true);
+    expect(result.conditionsIntegrity).toBe(true);
     expect(result.expectedWinnerIds).toEqual(draw.winnerIds);
   });
 
@@ -101,15 +109,20 @@ describe('Verification API Replay Engine', () => {
 
     const fakeWinnerIds = ['9999']; // Tampered winners
 
-    const result = verifyDrawResult(
+    const result = verifyDrawResult({
+      giveawayId: 'gw-verif-1',
+      drawId: draw.drawId,
+      drawnAt: draw.drawnAt,
       snapshot,
       seed,
-      1,
-      1,
-      fakeWinnerIds,
-      draw.deterministicProofHash,
-      draw.algorithmVersion
-    );
+      claimedWinnersCount: 1,
+      claimedReserveCount: 1,
+      claimedWinnerIds: fakeWinnerIds,
+      claimedReserveWinnerIds: draw.reserveWinnerIds,
+      claimedDeterministicProofHash: draw.deterministicProofHash,
+      claimedAuditEventHash: draw.auditEventHash,
+      algorithmVersion: draw.algorithmVersion,
+    });
 
     expect(result.verified).toBe(false);
     expect(result.winnersMatch).toBe(false);
@@ -127,15 +140,20 @@ describe('Verification API Replay Engine', () => {
 
     const fakeProofHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
-    const result = verifyDrawResult(
+    const result = verifyDrawResult({
+      giveawayId: 'gw-verif-1',
+      drawId: draw.drawId,
+      drawnAt: draw.drawnAt,
       snapshot,
       seed,
-      1,
-      1,
-      draw.winnerIds,
-      fakeProofHash,
-      draw.algorithmVersion
-    );
+      claimedWinnersCount: 1,
+      claimedReserveCount: 1,
+      claimedWinnerIds: draw.winnerIds,
+      claimedReserveWinnerIds: draw.reserveWinnerIds,
+      claimedDeterministicProofHash: fakeProofHash,
+      claimedAuditEventHash: draw.auditEventHash,
+      algorithmVersion: draw.algorithmVersion,
+    });
 
     expect(result.verified).toBe(false);
     expect(result.deterministicProofHashMatch).toBe(false);

@@ -5,10 +5,16 @@ import {
   DrawExecutionResult, 
   ALGORITHM_HMAC_SHA256_FY_V1, 
   ParticipantSnapshotData,
+  VerificationParams,
   VerificationResult
 } from '../types/audit';
 import { DeterministicHmacStream } from './unbiased-sampler';
-import { computeDeterministicProofHash, computeAuditEventHash } from './canonical';
+import { 
+  computeDeterministicProofHash, 
+  computeAuditEventHash,
+  computeParticipantsSnapshotHash,
+  computeConditionsHash
+} from './canonical';
 
 export const ALGORITHM_VERSION_V1 = ALGORITHM_HMAC_SHA256_FY_V1; // 'HMAC_SHA256_FY_V1'
 
@@ -161,55 +167,102 @@ export function executeDeterministicDraw(params: DrawExecutionParams): DrawExecu
 }
 
 /**
- * Re-runs draw algorithm on a snapshot to verify identical outcome and hashes
+ * Re-runs draw algorithm on a snapshot to verify identical outcome and all cryptographic integrity hashes
  */
-export function verifyDrawResult(
-  snapshot: ParticipantSnapshotData,
-  seed: string,
-  claimedWinnersCount: number,
-  claimedReserveCount: number,
-  claimedWinnerIds?: string[],
-  claimedDeterministicProofHash?: string,
-  algorithmVersion: string = ALGORITHM_VERSION_V1
-): VerificationResult {
-  if (algorithmVersion !== ALGORITHM_VERSION_V1) {
-    throw new Error(`Unsupported algorithm version for replay: ${algorithmVersion}`);
+export function verifyDrawResult(params: VerificationParams): VerificationResult {
+  const {
+    giveawayId,
+    drawId,
+    drawnAt,
+    snapshot,
+    seed,
+    claimedWinnersCount,
+    claimedReserveCount,
+    claimedWinnerIds = [],
+    claimedReserveWinnerIds = [],
+    claimedDeterministicProofHash = '',
+    claimedAuditEventHash = '',
+    algorithmVersion = ALGORITHM_VERSION_V1,
+  } = params;
+
+  const algorithmSupported = (algorithmVersion === ALGORITHM_VERSION_V1);
+
+  // 1. Check Participant Snapshot Integrity: real recalculation from array
+  const computedSnapshotHash = computeParticipantsSnapshotHash(snapshot.eligibleParticipants || []);
+  const participantsSnapshotIntegrity = (computedSnapshotHash === snapshot.participantsSnapshotHash);
+
+  // 2. Check Conditions Integrity: real recalculation from filter rules snapshot
+  const computedConditionsHash = computeConditionsHash(snapshot.filterRulesSnapshot || {} as any);
+  const conditionsIntegrity = (computedConditionsHash === snapshot.conditionsHash);
+
+  // 3. Replay randomizer
+  let replayed: DrawExecutionResult | null = null;
+  let replayError = false;
+
+  try {
+    replayed = executeDeterministicDrawV1({
+      giveawayId,
+      snapshot,
+      totalLoadedCount: snapshot.participantCount,
+      winnersCount: claimedWinnersCount,
+      reserveWinnersCount: claimedReserveCount,
+      seed,
+    });
+  } catch {
+    replayError = true;
   }
 
-  const replayed = executeDeterministicDrawV1({
-    giveawayId: snapshot.giveawayId,
-    snapshot,
-    totalLoadedCount: snapshot.participantCount,
-    winnersCount: claimedWinnersCount,
-    reserveWinnersCount: claimedReserveCount,
-    seed,
-  });
-
-  const winnersMatch = claimedWinnerIds 
+  const winnersMatch = !replayError && replayed !== null
     ? JSON.stringify(replayed.winnerIds) === JSON.stringify(claimedWinnerIds)
-    : true;
+    : false;
 
-  const deterministicProofHashMatch = claimedDeterministicProofHash
+  const reserveWinnersMatch = !replayError && replayed !== null
+    ? JSON.stringify(replayed.reserveWinnerIds) === JSON.stringify(claimedReserveWinnerIds)
+    : false;
+
+  const deterministicProofHashMatch = !replayError && replayed !== null
     ? replayed.deterministicProofHash === claimedDeterministicProofHash
-    : true;
+    : false;
 
-  const snapshotHashMatch = replayed.participantsSnapshotHash === snapshot.participantsSnapshotHash;
-  const conditionsHashMatch = replayed.conditionsHash === snapshot.conditionsHash;
+  // 4. Check Audit Event Hash: recomputed from giveawayId, drawId, drawnAt, and proof hash
+  const expectedAuditEventHash = (!replayError && replayed !== null)
+    ? computeAuditEventHash({
+        giveawayId,
+        drawId,
+        drawnAt,
+        deterministicProofHash: replayed.deterministicProofHash,
+      })
+    : '';
 
-  const verified = winnersMatch && deterministicProofHashMatch && snapshotHashMatch && conditionsHashMatch;
+  const auditEventHashMatch = (expectedAuditEventHash === claimedAuditEventHash);
+
+  const verified = (
+    algorithmSupported &&
+    participantsSnapshotIntegrity &&
+    conditionsIntegrity &&
+    winnersMatch &&
+    reserveWinnersMatch &&
+    deterministicProofHashMatch &&
+    auditEventHashMatch
+  );
 
   return {
     verified,
-    algorithmVersion: ALGORITHM_VERSION_V1,
+    algorithmVersion,
+    algorithmSupported,
+    participantsSnapshotIntegrity,
+    conditionsIntegrity,
     winnersMatch,
-    snapshotHashMatch,
-    conditionsHashMatch,
+    reserveWinnersMatch,
     deterministicProofHashMatch,
-    expectedWinners: replayed.winners,
-    expectedReserveWinners: replayed.reserveWinners,
-    expectedWinnerIds: replayed.winnerIds,
-    expectedReserveWinnerIds: replayed.reserveWinnerIds,
-    expectedDeterministicProofHash: replayed.deterministicProofHash,
-    actualDeterministicProofHash: claimedDeterministicProofHash || replayed.deterministicProofHash,
+    auditEventHashMatch,
+    expectedWinners: replayed?.winners || [],
+    expectedReserveWinners: replayed?.reserveWinners || [],
+    expectedWinnerIds: replayed?.winnerIds || [],
+    expectedReserveWinnerIds: replayed?.reserveWinnerIds || [],
+    expectedDeterministicProofHash: replayed?.deterministicProofHash || '',
+    expectedAuditEventHash,
+    actualDeterministicProofHash: claimedDeterministicProofHash,
+    actualAuditEventHash: claimedAuditEventHash,
   };
 }

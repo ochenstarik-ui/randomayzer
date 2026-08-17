@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeDeterministicDrawV1, verifyDrawResult } from '../src/core/randomizer/deterministic';
 import { computeParticipantsSnapshotHash, computeConditionsHash } from '../src/core/randomizer/canonical';
-import { FilterRules, DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
+import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 import { FilteredParticipant } from '../src/core/types/participant';
 import { ParticipantSnapshotData } from '../src/core/types/audit';
 
@@ -54,6 +54,7 @@ describe('DeterministicProofHash & AuditEventHash Separation', () => {
     version: 1,
     createdAt: '2026-08-17T12:00:00.000Z',
     eligibleParticipants: participants,
+    filterRulesSnapshot: { ...DEFAULT_FILTER_RULES },
     participantCount: 3,
     participantsSnapshotHash: computeParticipantsSnapshotHash(participants),
     conditionsHash: computeConditionsHash(DEFAULT_FILTER_RULES),
@@ -120,20 +121,28 @@ describe('DeterministicProofHash & AuditEventHash Separation', () => {
       seed,
     });
 
-    const verification = verifyDrawResult(
+    const verification = verifyDrawResult({
+      giveawayId: 'gw-1',
+      drawId: originalDraw.drawId,
+      drawnAt: originalDraw.drawnAt,
       snapshot,
       seed,
-      1,
-      1,
-      originalDraw.winnerIds,
-      originalDraw.deterministicProofHash
-    );
+      claimedWinnersCount: 1,
+      claimedReserveCount: 1,
+      claimedWinnerIds: originalDraw.winnerIds,
+      claimedReserveWinnerIds: originalDraw.reserveWinnerIds,
+      claimedDeterministicProofHash: originalDraw.deterministicProofHash,
+      claimedAuditEventHash: originalDraw.auditEventHash,
+      algorithmVersion: originalDraw.algorithmVersion,
+    });
 
     expect(verification.verified).toBe(true);
     expect(verification.winnersMatch).toBe(true);
+    expect(verification.reserveWinnersMatch).toBe(true);
     expect(verification.deterministicProofHashMatch).toBe(true);
-    expect(verification.snapshotHashMatch).toBe(true);
-    expect(verification.conditionsHashMatch).toBe(true);
+    expect(verification.auditEventHashMatch).toBe(true);
+    expect(verification.participantsSnapshotIntegrity).toBe(true);
+    expect(verification.conditionsIntegrity).toBe(true);
     expect(verification.expectedDeterministicProofHash).toBe(originalDraw.deterministicProofHash);
   });
 });
