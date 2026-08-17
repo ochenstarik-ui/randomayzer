@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  VK
+  TELEGRAM
+  YOUTUBE
+}
+
+enum GiveawayStatus {
+  DRAFT
+  FETCHING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum ParticipantSource {
+  LIKES
+  COMMENTS
+  REPOSTS
+  COMBINED
+}
+
+model Giveaway {
+  id                  String         @id @default(cuid())
+  platform            Platform       @default(VK)
+  sourceUrl           String
+  platformOwnerId     String
+  platformPostId      String
+  title               String
+  description         String?
+  postImageUrl        String?
+  postLikesCount      Int            @default(0)
+  postCommentsCount   Int            @default(0)
+  postRepostsCount    Int            @default(0)
+  status              GiveawayStatus @default(DRAFT)
+  filterRules         Json           // FilterRules object
+  winnersCount        Int            @default(1)
+  reserveWinnersCount Int            @default(0)
+  seed                String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  drawnAt             DateTime?
+
+  participants        Participant[]
+  drawResult          DrawResult?
+  auditRecord         AuditRecord?
+
+  @@index([platform, platformOwnerId, platformPostId])
+}
+
+model Participant {
+  id              String            @id @default(cuid())
+  giveawayId      String
+  giveaway        Giveaway          @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  platformUserId  String
+  firstName       String
+  lastName        String
+  username        String?
+  avatarUrl       String?
+  source          ParticipantSource @default(LIKES)
+  liked           Boolean           @default(false)
+  commented       Boolean           @default(false)
+  commentsCount   Int               @default(0)
+  reposted        Boolean           @default(false)
+  subscribed      Boolean           @default(false)
+  eligible        Boolean           @default(true)
+  exclusionReason String?
+  createdAt       DateTime          @default(now())
+
+  @@unique([giveawayId, platformUserId])
+  @@index([giveawayId, eligible])
+}
+
+model DrawResult {
+  id                 String   @id @default(cuid())
+  giveawayId         String   @unique
+  giveaway           Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  winners            Json     // Array of Winner entities
+  reserveWinners     Json     // Array of Winner entities
+  totalEligibleCount Int
+  totalLoadedCount   Int
+  seedUsed           String
+  algorithm          String   @default("HMAC-SHA256-FISHER-YATES")
+  drawnAt            DateTime @default(now())
+}
+
+model AuditRecord {
+  id                       String   @id @default(cuid())
+  giveawayId               String   @unique
+  giveaway                 Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  participantsSnapshotHash String
+  seed                     String
+  algorithm                String   @default("HMAC-SHA256-FISHER-YATES")
+  filterRulesSnapshot      Json
+  winnersSnapshot          Json
+  verifiedAt               DateTime @default(now())
+  verificationSignature    String
+}
