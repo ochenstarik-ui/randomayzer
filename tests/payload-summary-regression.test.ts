@@ -5,11 +5,17 @@ import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repositor
 import { POST as participantsPost } from '../src/app/api/giveaways/[id]/participants/route';
 import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 import { ProviderRegistry } from '../src/providers/registry';
+import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
 
 describe('POST /participants Payload Summary Regression Test', () => {
-  beforeEach(() => {
+  const user = { id: 'usr_payload_test', vkUserId: '88888' };
+  let sessionId: string;
+
+  beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
     ProviderRegistry.useMockVk();
+    defaultSessionStore.clear();
+    sessionId = await defaultSessionStore.createSession(user);
   });
 
   it('POST /participants response must return summary only and NOT contain massive participant arrays', async () => {
@@ -28,10 +34,15 @@ describe('POST /participants Payload Summary Regression Test', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 1,
       reserveWinnersCount: 0,
+      organizerId: user.id,
     });
 
     const req = new NextRequest(`http://localhost/api/giveaways/${gw.id}/participants`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `${SESSION_COOKIE_NAME}=${sessionId}`,
+      },
       body: JSON.stringify({
         filterRules: DEFAULT_FILTER_RULES,
       }),

@@ -5,6 +5,8 @@ import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http
 import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { resolveClientIp } from '@/lib/client-ip';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }

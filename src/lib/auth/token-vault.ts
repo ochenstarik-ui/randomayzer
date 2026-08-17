@@ -6,33 +6,55 @@ export interface ITokenVault {
 }
 
 export class AesGcmTokenVault implements ITokenVault {
-  private readonly key: Buffer;
+  private key: Buffer | null = null;
   private static readonly ALGORITHM = 'aes-256-gcm';
   private static readonly IV_LENGTH = 12; // Standard 96-bit IV for GCM
   private static readonly AUTH_TAG_LENGTH = 16;
+  private static readonly DEV_TEST_KEY = 'dev-explicit-test-encryption-key-32bytes!';
+  private readonly explicitKey?: string;
 
   constructor(secretKey?: string) {
-    const rawSecret =
-      secretKey ||
-      process.env.TOKEN_ENCRYPTION_KEY ||
-      process.env.AUTH_SECRET ||
-      'dev-encryption-key-do-not-use-in-production-randomayzer-2026';
+    this.explicitKey = secretKey;
+    if (secretKey) {
+      this.key = createHash('sha256').update(secretKey, 'utf8').digest();
+    } else {
+      // Validate immediately at instantiation unless running in Next.js static build phase
+      const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+      if (!isBuildPhase) {
+        this.getKey();
+      }
+    }
+  }
 
-    if (process.env.NODE_ENV === 'production' && !process.env.TOKEN_ENCRYPTION_KEY) {
-      console.warn(
-        '[SECURITY WARNING] TOKEN_ENCRYPTION_KEY is not set in production. Using fallback secret.'
-      );
+  private getKey(): Buffer {
+    if (this.key) return this.key;
+
+    const rawSecret = this.explicitKey || process.env.TOKEN_ENCRYPTION_KEY;
+
+    if (process.env.NODE_ENV === 'production') {
+      if (!rawSecret) {
+        throw new Error(
+          'FATAL CONFIGURATION ERROR: TOKEN_ENCRYPTION_KEY environment variable is strictly required in production.'
+        );
+      }
+      if (rawSecret.length < 32) {
+        throw new Error(
+          'FATAL CONFIGURATION ERROR: TOKEN_ENCRYPTION_KEY must be at least 32 characters long in production for cryptographic safety.'
+        );
+      }
     }
 
-    // Derive strict 32-byte (256-bit) key via SHA-256
-    this.key = createHash('sha256').update(rawSecret, 'utf8').digest();
+    const keyToUse = rawSecret || AesGcmTokenVault.DEV_TEST_KEY;
+    this.key = createHash('sha256').update(keyToUse, 'utf8').digest();
+    return this.key;
   }
 
   public async encrypt(plaintext: string): Promise<string> {
     if (!plaintext) return '';
 
+    const key = this.getKey();
     const iv = randomBytes(AesGcmTokenVault.IV_LENGTH);
-    const cipher = createCipheriv(AesGcmTokenVault.ALGORITHM, this.key, iv, {
+    const cipher = createCipheriv(AesGcmTokenVault.ALGORITHM, key, iv, {
       authTagLength: AesGcmTokenVault.AUTH_TAG_LENGTH,
     });
 
@@ -57,7 +79,8 @@ export class AesGcmTokenVault implements ITokenVault {
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(tagHex, 'hex');
 
-    const decipher = createDecipheriv(AesGcmTokenVault.ALGORITHM, this.key, iv, {
+    const key = this.getKey();
+    const decipher = createDecipheriv(AesGcmTokenVault.ALGORITHM, key, iv, {
       authTagLength: AesGcmTokenVault.AUTH_TAG_LENGTH,
     });
     decipher.setAuthTag(authTag);

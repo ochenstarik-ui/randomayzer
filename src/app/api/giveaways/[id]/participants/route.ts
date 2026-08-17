@@ -3,10 +3,13 @@ import { GiveawayStore } from '@/lib/giveaway-store';
 import { ProviderFactory } from '@/providers/factory';
 import { executeParticipantPipeline } from '@/core/pipeline/participant-enricher';
 import { fetchParticipantsSchema, validateProviderCapabilities } from '@/core/validation/giveaway-schemas';
-import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
+import { handleApiError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter, generalApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
+import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
@@ -16,6 +19,9 @@ export async function GET(
     const { id } = params;
     const clientIp = resolveClientIp(req);
     generalApiRateLimiter.assertAllowed(`participants-get:${clientIp}`);
+
+    // Enforce giveaway ownership authorization (private participant PII data)
+    await requireGiveawayOwner(req, id);
 
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -43,10 +49,8 @@ export async function POST(
     const clientIp = resolveClientIp(req);
     expensiveApiRateLimiter.assertAllowed(`participants-import:${clientIp}:${id}`);
 
-    const giveaway = await GiveawayStore.getById(id);
-    if (!giveaway) {
-      throw new NotFoundError(`Giveaway with id "${id}" not found`);
-    }
+    // Enforce giveaway ownership authorization for importing participants
+    const { giveaway } = await requireGiveawayOwner(req, id);
 
     const rawBody = await req.json();
     const validated = fetchParticipantsSchema.parse(rawBody);

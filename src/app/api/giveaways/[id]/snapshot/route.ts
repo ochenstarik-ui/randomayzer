@@ -3,10 +3,13 @@ import { GiveawayStore } from '@/lib/giveaway-store';
 import { ProviderFactory } from '@/providers/factory';
 import { applyFilterRules } from '@/core/filtering/filter-engine';
 import { createSnapshotSchema, validateProviderCapabilities } from '@/core/validation/giveaway-schemas';
-import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http-errors';
+import { handleApiError, ConflictError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
+import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
@@ -17,10 +20,8 @@ export async function POST(
     const clientIp = resolveClientIp(req);
     expensiveApiRateLimiter.assertAllowed(`snapshot-lock:${clientIp}:${id}`);
 
-    const giveaway = await GiveawayStore.getById(id);
-    if (!giveaway) {
-      throw new NotFoundError(`Giveaway with id "${id}" not found`);
-    }
+    // Enforce giveaway ownership authorization
+    const { giveaway } = await requireGiveawayOwner(req, id);
 
     if (giveaway.status === 'DRAWN' || giveaway.status === 'PUBLISHED') {
       throw new ConflictError(`Cannot create new snapshot for giveaway in status "${giveaway.status}"`);

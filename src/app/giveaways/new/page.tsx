@@ -462,24 +462,23 @@ export default function NewGiveawayWizardPage() {
               </div>
             </label>
 
-            {/* Filter: 1 User = 1 Chance */}
-            <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer transition-colors">
-              <input
-                type="checkbox"
-                checked={rules.excludeDuplicateComments}
-                onChange={(e) => setRules({ ...rules, excludeDuplicateComments: e.target.checked })}
-                className="mt-1 w-4 h-4 rounded text-blue-600 focus:ring-blue-500 bg-slate-900 border-slate-700"
-              />
-              <div>
-                <div className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  Учитывать пользователя один раз
+            {/* Engine Guarantee: 1 User = 1 Entry */}
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
+              <div className="mt-0.5">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-white flex items-center justify-between">
+                  <span>1 пользователь = 1 шанс</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
+                    Гарантия ядра
+                  </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Дублирующие комментарии не увеличивают шансы
+                  Каждый уникальный участник включается в розыгрыш ровно один раз
                 </p>
               </div>
-            </label>
+            </div>
 
             {/* Condition: Repost (Disabled by capability) */}
             <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-950/40 border border-slate-800/50 opacity-60 cursor-not-allowed">

@@ -3,6 +3,7 @@ import { defaultOAuthTransactionStore } from '@/lib/auth/oauth-state';
 import { defaultVkOAuthClient, IVkOAuthClient } from '@/integrations/vk/vk-oauth-client';
 import { MockVkOAuthClient } from '@/integrations/vk/mock-oauth-client';
 import { handleApiError, ValidationError } from '@/core/errors/http-errors';
+import { validateSafeRedirectTarget } from '@/lib/auth/safe-redirect';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +17,10 @@ export function getOAuthClient(): IVkOAuthClient {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const redirectTarget = searchParams.get('redirectTarget') || '/';
+    const rawRedirectTarget = searchParams.get('redirectTarget');
+    const redirectTarget = validateSafeRedirectTarget(rawRedirectTarget);
 
-    const clientId = process.env.VK_APP_ID || process.env.NEXT_PUBLIC_VK_APP_ID || '51990000';
+    const clientId = process.env.VK_APP_ID || (process.env.NODE_ENV === 'test' ? 'test_vk_app_id' : '');
     if (!clientId) {
       throw new ValidationError('VK_APP_ID is not configured in server environment');
     }

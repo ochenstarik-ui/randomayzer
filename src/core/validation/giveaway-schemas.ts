@@ -48,7 +48,7 @@ export const createGiveawaySchema = z.object({
   winnersCount: z.number().int().min(1).max(100).default(1),
   reserveWinnersCount: z.number().int().min(0).max(100).default(0),
   seed: z.string().max(512).optional(),
-}).strict();
+}).strip();
 
 export const fetchParticipantsSchema = z.object({
   filterRules: filterRulesSchema.default(defaultRulesObject),

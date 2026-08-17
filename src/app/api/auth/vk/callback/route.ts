@@ -4,7 +4,8 @@ import { getOAuthClient } from '../start/route';
 import { defaultTokenVault } from '@/lib/auth/token-vault';
 import { defaultUserRepository } from '@/lib/repository/user-repository';
 import { defaultSessionStore, setSessionCookie } from '@/lib/auth/session';
-import { handleApiError, ValidationError, UnauthorizedError } from '@/core/errors/http-errors';
+import { handleApiError, ValidationError } from '@/core/errors/http-errors';
+import { validateSafeRedirectTarget } from '@/lib/auth/safe-redirect';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +21,19 @@ export async function GET(req: NextRequest) {
 
     // 1. Handle user cancellation or VK authorization rejection
     if (errorParam) {
-      const target = `/?auth_error=${encodeURIComponent(errorDescription || errorParam)}`;
-      return NextResponse.redirect(`${origin}${target}`);
+      // Invalidate state transaction if present so it cannot be reused
+      if (state) {
+        try {
+          await defaultOAuthTransactionStore.consumeTransaction(state);
+        } catch {
+          // Ignore consumption error on cancellation path
+        }
+      }
+
+      const safeErrorMsg = encodeURIComponent(
+        (errorDescription || errorParam).replace(/[^\w\sа-яА-ЯёЁ.,-]/gi, '').slice(0, 100)
+      );
+      return NextResponse.redirect(`${origin}/?auth_error=${safeErrorMsg}`);
     }
 
     if (!code) {
@@ -34,8 +46,13 @@ export async function GET(req: NextRequest) {
 
     // 2. Validate and consume single-use state transaction (recovers codeVerifier and redirectTarget)
     const { codeVerifier, redirectTarget } = await defaultOAuthTransactionStore.consumeTransaction(state);
+    const safeRedirect = validateSafeRedirectTarget(redirectTarget);
 
-    const clientId = process.env.VK_APP_ID || process.env.NEXT_PUBLIC_VK_APP_ID || '51990000';
+    const clientId = process.env.VK_APP_ID || (process.env.NODE_ENV === 'test' ? 'test_vk_app_id' : '');
+    if (!clientId) {
+      throw new ValidationError('VK_APP_ID is not configured in server environment');
+    }
+
     const clientSecret = process.env.VK_CLIENT_SECRET;
     const redirectUri = process.env.VK_REDIRECT_URI || `${origin}/api/auth/vk/callback`;
 
@@ -78,8 +95,7 @@ export async function GET(req: NextRequest) {
     // 7. Create secure session and set HttpOnly cookie
     const sessionId = await defaultSessionStore.createSession(sessionUser);
 
-    const destination = redirectTarget.startsWith('/') ? redirectTarget : '/';
-    const response = NextResponse.redirect(`${origin}${destination}`);
+    const response = NextResponse.redirect(`${origin}${safeRedirect}`);
     setSessionCookie(response, sessionId);
 
     return response;

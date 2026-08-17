@@ -34,6 +34,11 @@ export class MemorySessionStore implements ISessionStore {
   private readonly defaultTtlMs: number;
 
   constructor(options?: { defaultTtlMs?: number }) {
+    if (process.env.MULTI_INSTANCE === 'true') {
+      throw new Error(
+        'FATAL CONFIGURATION ERROR: In-memory session store cannot be used with MULTI_INSTANCE=true. Configure a distributed store (e.g. Redis).'
+      );
+    }
     this.defaultTtlMs = options?.defaultTtlMs ?? SESSION_MAX_AGE_SECONDS * 1000;
   }
 

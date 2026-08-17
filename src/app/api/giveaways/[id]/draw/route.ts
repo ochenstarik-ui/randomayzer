@@ -5,13 +5,15 @@ import { executeDeterministicDrawV1 } from '@/core/randomizer/deterministic';
 import { executeDrawSchema } from '@/core/validation/giveaway-schemas';
 import { 
   handleApiError, 
-  NotFoundError, 
   ConflictError, 
-  ValidationError,
+  ValidationError, 
   DrawAlreadyCompletedError 
 } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { resolveClientIp } from '@/lib/client-ip';
+import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
@@ -22,10 +24,8 @@ export async function POST(
     const clientIp = resolveClientIp(req);
     expensiveApiRateLimiter.assertAllowed(`draw-execute:${clientIp}:${id}`);
 
-    const giveaway = await GiveawayStore.getById(id);
-    if (!giveaway) {
-      throw new NotFoundError(`Giveaway with id "${id}" not found`);
-    }
+    // Enforce giveaway ownership authorization
+    const { giveaway } = await requireGiveawayOwner(req, id);
 
     // 1. Strict Terminal State Guard: If already DRAWN or PUBLISHED, return 409 DRAW_ALREADY_COMPLETED
     if (giveaway.status === 'DRAWN' || giveaway.status === 'PUBLISHED') {

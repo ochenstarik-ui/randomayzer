@@ -7,11 +7,17 @@ import { POST as drawPost } from '../src/app/api/giveaways/[id]/draw/route';
 import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 import { FilteredParticipant } from '../src/core/types/participant';
 import { executeDeterministicDrawV1 } from '../src/core/randomizer/deterministic';
+import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
 
 describe('Winner Count Contract & Draw Retry Invariants', () => {
-  beforeEach(() => {
+  const testUser = { id: 'usr_winner_contract_tester', vkUserId: '66666' };
+  let sessionId: string;
+
+  beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
     ProviderRegistry.useMockVk();
+    defaultSessionStore.clear();
+    sessionId = await defaultSessionStore.createSession(testUser);
   });
 
   const threeParticipants: FilteredParticipant[] = Array.from({ length: 3 }, (_, i) => ({
@@ -44,6 +50,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 3,
       reserveWinnersCount: 0,
+      organizerId: testUser.id,
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
@@ -58,11 +65,12 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
       seed: 'test-seed-3-3-0',
     });
 
-    expect(result.winners.length).toBe(3);
-    expect(result.reserveWinners.length).toBe(0);
+    expect(result.winners).toHaveLength(3);
+    expect(result.reserveWinners).toHaveLength(0);
+    expect(result.totalEligibleCount).toBe(3);
   });
 
-  it('eligible=3, winners=4, reserve=0 -> error (never silently reduces winners count)', async () => {
+  it('eligible=3, winners=2, reserve=1 -> success', async () => {
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-100_2',
       post: {
@@ -76,26 +84,29 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
         repostsCount: 0,
       },
       filterRules: DEFAULT_FILTER_RULES,
-      winnersCount: 4,
-      reserveWinnersCount: 0,
+      winnersCount: 2,
+      reserveWinnersCount: 1,
+      organizerId: testUser.id,
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
     const snapshot = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
 
-    expect(() =>
-      executeDeterministicDrawV1({
-        giveawayId: gw.id,
-        snapshot,
-        totalLoadedCount: 3,
-        winnersCount: 4,
-        reserveWinnersCount: 0,
-        seed: 'test-seed-3-4-0',
-      })
-    ).toThrow(/exceeds eligible participants count/i);
+    const result = executeDeterministicDrawV1({
+      giveawayId: gw.id,
+      snapshot,
+      totalLoadedCount: 3,
+      winnersCount: 2,
+      reserveWinnersCount: 1,
+      seed: 'test-seed-2-1-0',
+    });
+
+    expect(result.winners).toHaveLength(2);
+    expect(result.reserveWinners).toHaveLength(1);
+    expect(result.winnerIds).not.toEqual(result.reserveWinnerIds);
   });
 
-  it('eligible=3, winners=3, reserve=3 -> error (total 6 exceeds pool of 3)', async () => {
+  it('eligible=3, winners=3, reserve=3 -> throws error (never silently reduce)', async () => {
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-100_3',
       post: {
@@ -111,6 +122,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 3,
       reserveWinnersCount: 3,
+      organizerId: testUser.id,
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
@@ -142,6 +154,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
         repostsCount: 0,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: testUser.id,
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
@@ -150,6 +163,10 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
     // First draw
     const req1 = new NextRequest(`http://localhost/api/giveaways/${gw.id}/draw`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `${SESSION_COOKIE_NAME}=${sessionId}`,
+      },
       body: JSON.stringify({ winnersCount: 1, reserveWinnersCount: 0 }),
     });
     const res1 = await drawPost(req1, { params: { id: gw.id } });
@@ -158,6 +175,10 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
     // Second draw -> MUST return 409 DRAW_ALREADY_COMPLETED
     const req2 = new NextRequest(`http://localhost/api/giveaways/${gw.id}/draw`, {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `${SESSION_COOKIE_NAME}=${sessionId}`,
+      },
       body: JSON.stringify({ winnersCount: 1, reserveWinnersCount: 0 }),
     });
     const res2 = await drawPost(req2, { params: { id: gw.id } });

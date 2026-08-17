@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GiveawayStore } from '@/lib/giveaway-store';
-import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
+import { handleApiError } from '@/core/errors/http-errors';
 import { generalApiRateLimiter } from '@/lib/rate-limiter';
 import { resolveClientIp } from '@/lib/client-ip';
+import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
@@ -13,11 +15,8 @@ export async function GET(
     const clientIp = resolveClientIp(req);
     generalApiRateLimiter.assertAllowed(`giveaway-get:${clientIp}`);
 
-    const giveaway = await GiveawayStore.getById(id);
-
-    if (!giveaway) {
-      throw new NotFoundError(`Giveaway with id "${id}" not found`);
-    }
+    // Enforce giveaway ownership authorization
+    const { giveaway } = await requireGiveawayOwner(req, id);
 
     return NextResponse.json({ success: true, giveaway });
   } catch (error: any) {

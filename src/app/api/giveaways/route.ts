@@ -5,19 +5,28 @@ import { handleApiError } from '@/core/errors/http-errors';
 import { generalApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
+import { requireAuthenticatedUser } from '@/lib/auth/auth-guard';
 import { getSessionFromRequest } from '@/lib/auth/session';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const clientIp = resolveClientIp(req);
     generalApiRateLimiter.assertAllowed(`giveaways-list:${clientIp}`);
 
-    // Return lightweight summary for scalability (no massive participant/snapshot payloads)
+    const sessionUser = await getSessionFromRequest(req);
     const summaries = await GiveawayStore.listSummaries();
+
+    // If organizer is logged in, show their giveaways (or all if requested)
+    const filteredSummaries = sessionUser
+      ? summaries.filter(s => !s.organizerId || s.organizerId === sessionUser.id)
+      : summaries;
+
     return NextResponse.json({
       success: true,
-      giveaways: summaries,
-      totalCount: summaries.length,
+      giveaways: filteredSummaries,
+      totalCount: filteredSummaries.length,
     });
   } catch (error: any) {
     return handleApiError(error);
@@ -28,6 +37,9 @@ export async function POST(req: NextRequest) {
   try {
     const clientIp = resolveClientIp(req);
     generalApiRateLimiter.assertAllowed(`giveaway-create:${clientIp}`);
+
+    // 1. Mandatory authentication guard for giveaway creation
+    const sessionUser = await requireAuthenticatedUser(req);
 
     const rawBody = await req.json();
     const validated = createGiveawaySchema.parse(rawBody);
@@ -44,8 +56,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const sessionUser = await getSessionFromRequest(req);
-
+    // 2. Set organizerId strictly from server session (ignoring any client spoofing)
     const giveaway = await GiveawayStore.create({
       sourceUrl: validated.sourceUrl,
       post: validated.post,
@@ -53,7 +64,7 @@ export async function POST(req: NextRequest) {
       winnersCount: validated.winnersCount,
       reserveWinnersCount: validated.reserveWinnersCount,
       seed: validated.seed,
-      organizerId: sessionUser?.id,
+      organizerId: sessionUser.id,
     });
 
     const responseBody = {

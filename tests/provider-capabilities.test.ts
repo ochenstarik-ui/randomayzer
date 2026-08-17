@@ -8,6 +8,10 @@ import { NextRequest } from 'next/server';
 import { POST as participantsPost } from '../src/app/api/giveaways/[id]/participants/route';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
+import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
+
+const testUser = { id: 'usr_capabilities_tester', vkUserId: '77777' };
+let sessionId: string;
 
 async function createGiveaway(store: typeof GiveawayStore) {
   return store.create({
@@ -34,37 +38,56 @@ async function createGiveaway(store: typeof GiveawayStore) {
     },
     winnersCount: 1,
     reserveWinnersCount: 0,
+    organizerId: testUser.id,
   });
 }
 
 function buildReq(id: string, body: object): NextRequest {
   return new NextRequest(`http://localhost/api/giveaways/${id}/participants`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: `${SESSION_COOKIE_NAME}=${sessionId}`,
+    },
     body: JSON.stringify(body),
   });
 }
 
 describe('Provider capabilities', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
     ProviderRegistry.useMockVk();
+    defaultSessionStore.clear();
+    sessionId = await defaultSessionStore.createSession(testUser);
   });
 
-  it('VK mock provider declares reposts=false and adminDetection=false', () => {
+  it('VkMockProvider declares reposts and admin detection as unsupported', () => {
     const provider = new VkMockProvider();
     expect(provider.capabilities.reposts).toBe(false);
     expect(provider.capabilities.adminDetection).toBe(false);
-    expect(provider.capabilities.subscriptions).toBe(true);
   });
 
-  it('VK real provider declares reposts=false and adminDetection=false', () => {
-    const provider = new VkProvider('dummy-token');
+  it('VkProvider declares reposts and admin detection as unsupported for public service tokens', () => {
+    const provider = new VkProvider();
     expect(provider.capabilities.reposts).toBe(false);
     expect(provider.capabilities.adminDetection).toBe(false);
+  });
+
+  it('VkMockProvider supports likes, comments and subscription checks', () => {
+    const provider = new VkMockProvider();
+    expect(provider.capabilities.likes).toBe(true);
+    expect(provider.capabilities.comments).toBe(true);
     expect(provider.capabilities.subscriptions).toBe(true);
   });
 
-  it('validation rejects requireRepost when provider cannot verify reposts', () => {
+  it('VkProvider supports likes, comments and subscription checks', () => {
+    const provider = new VkProvider();
+    expect(provider.capabilities.likes).toBe(true);
+    expect(provider.capabilities.comments).toBe(true);
+    expect(provider.capabilities.subscriptions).toBe(true);
+  });
+
+  it('validation rejects requireRepost when provider cannot fetch reposts', () => {
     const rules: FilterRules = {
       requireLike: false,
       requireComment: false,
