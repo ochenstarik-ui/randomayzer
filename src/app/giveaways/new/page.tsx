@@ -99,6 +99,33 @@ export default function NewGiveawayWizardPage() {
     }
   };
 
+  const [totalCount, setTotalCount] = useState(0);
+  const [eligibleCount, setEligibleCount] = useState(0);
+  const [excludedCount, setExcludedCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loadingPage, setLoadingPage] = useState(false);
+
+  const loadParticipantsPage = async (giveawayId: string, page: number, tab: 'all' | 'eligible' | 'excluded') => {
+    setLoadingPage(true);
+    try {
+      const res = await fetch(`/api/giveaways/${giveawayId}/participants?page=${page}&pageSize=50&tab=${tab}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setParticipants(data.participants || []);
+        setTotalCount(data.totalCount || 0);
+        setEligibleCount(data.eligibleCount || 0);
+        setExcludedCount(data.excludedCount || 0);
+        setCurrentPage(data.page || 1);
+        setTotalPages(data.totalPages || 1);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingPage(false);
+    }
+  };
+
   // Step 2 handler: Fetch & Enrich Participants
   const handleFetchParticipants = async () => {
     if (!createdGiveawayId) return;
@@ -120,10 +147,13 @@ export default function NewGiveawayWizardPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки участников');
+      if (!res.ok) throw new Error(data.error?.message || data.error || 'Ошибка загрузки участников');
 
-      setParticipants(data.allParticipants || []);
+      setTotalCount(data.totalCount || 0);
+      setEligibleCount(data.eligibleCount || 0);
+      setExcludedCount(data.excludedCount || 0);
       setStep(3);
+      await loadParticipantsPage(createdGiveawayId, 1, participantTab);
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -549,111 +579,150 @@ export default function NewGiveawayWizardPage() {
             {/* Filter Tabs */}
             <div className="flex items-center gap-1.5 p-1 bg-slate-950 border border-slate-800 rounded-lg text-xs font-medium self-start sm:self-auto">
               <button
-                onClick={() => setParticipantTab('eligible')}
+                onClick={() => {
+                  setParticipantTab('eligible');
+                  if (createdGiveawayId) loadParticipantsPage(createdGiveawayId, 1, 'eligible');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-colors ${
                   participantTab === 'eligible'
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Допущены ({eligibleParticipants.length})
+                Допущены ({eligibleCount})
               </button>
               <button
-                onClick={() => setParticipantTab('excluded')}
+                onClick={() => {
+                  setParticipantTab('excluded');
+                  if (createdGiveawayId) loadParticipantsPage(createdGiveawayId, 1, 'excluded');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-colors ${
                   participantTab === 'excluded'
                     ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Отклонены ({excludedParticipants.length})
+                Отклонены ({excludedCount})
               </button>
               <button
-                onClick={() => setParticipantTab('all')}
+                onClick={() => {
+                  setParticipantTab('all');
+                  if (createdGiveawayId) loadParticipantsPage(createdGiveawayId, 1, 'all');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-colors ${
                   participantTab === 'all'
                     ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Все ({participants.length})
+                Все ({totalCount})
               </button>
             </div>
           </div>
 
           {/* Table Container */}
           <div className="border border-slate-800 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Участник</th>
-                  <th className="py-3 px-4">VK ID</th>
-                  <th className="py-3 px-4 text-center">Лайк</th>
-                  <th className="py-3 px-4 text-center">Коммент</th>
-                  <th className="py-3 px-4 text-center">Подписка</th>
-                  <th className="py-3 px-4 text-right">Статус</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                {displayedParticipants.map((p) => (
-                  <tr key={p.platformUserId} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-slate-300 font-medium">
-                        {p.avatarUrl ? (
-                          <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          p.firstName[0]
-                        )}
-                      </div>
-                      <span className="font-medium text-white truncate max-w-[140px]">
-                        {p.firstName} {p.lastName}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 font-mono">
-                      id{p.platformUserId}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {p.liked ? (
-                        <Check className="w-4 h-4 text-rose-400 mx-auto" />
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {p.commented ? (
-                        <span className="text-blue-400 font-medium">{p.commentsCount || 1}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      {p.subscribed ? (
-                        <Check className="w-4 h-4 text-indigo-400 mx-auto" />
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {p.eligible ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Допущен
-                        </span>
-                      ) : (
-                        <span 
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 cursor-help"
-                          title={p.exclusionReason || 'Не выполнил условия'}
-                        >
-                          <XCircle className="w-3 h-3" />
-                          {p.exclusionReason || 'Отклонен'}
-                        </span>
-                      )}
-                    </td>
+            {loadingPage ? (
+              <div className="py-12 text-center text-slate-400 text-sm">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-400" />
+                Загрузка участников...
+              </div>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950 text-slate-400 sticky top-0 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-4">Участник</th>
+                    <th className="py-3 px-4">VK ID</th>
+                    <th className="py-3 px-4 text-center">Лайк</th>
+                    <th className="py-3 px-4 text-center">Коммент</th>
+                    <th className="py-3 px-4 text-center">Подписка</th>
+                    <th className="py-3 px-4 text-right">Статус</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                  {participants.map((p) => (
+                    <tr key={p.platformUserId} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden shrink-0 text-slate-300 font-medium">
+                          {p.avatarUrl ? (
+                            <img src={p.avatarUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            p.firstName[0]
+                          )}
+                        </div>
+                        <span className="font-medium text-white truncate max-w-[140px]">
+                          {p.firstName} {p.lastName}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 font-mono">
+                        id{p.platformUserId}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {p.liked ? (
+                          <Check className="w-4 h-4 text-rose-400 mx-auto" />
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {p.commented ? (
+                          <span className="text-blue-400 font-medium">{p.commentsCount || 1}</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {p.subscribed ? (
+                          <Check className="w-4 h-4 text-indigo-400 mx-auto" />
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {p.eligible ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Допущен
+                          </span>
+                        ) : (
+                          <span 
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20 cursor-help"
+                            title={p.exclusionReason || 'Не выполнил условия'}
+                          >
+                            <XCircle className="w-3 h-3" />
+                            {p.exclusionReason || 'Отклонен'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+              <span>Страница {currentPage} из {totalPages}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={currentPage <= 1 || loadingPage}
+                  onClick={() => createdGiveawayId && loadParticipantsPage(createdGiveawayId, currentPage - 1, participantTab)}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white transition-colors"
+                >
+                  Назад
+                </button>
+                <button
+                  disabled={currentPage >= totalPages || loadingPage}
+                  onClick={() => createdGiveawayId && loadParticipantsPage(createdGiveawayId, currentPage + 1, participantTab)}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-white transition-colors"
+                >
+                  Вперед
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-between items-center pt-4 border-t border-slate-800">
             <button
@@ -664,7 +733,7 @@ export default function NewGiveawayWizardPage() {
             </button>
             <button
               onClick={handleLockSnapshotAndProceed}
-              disabled={lockingSnapshot || eligibleParticipants.length === 0}
+              disabled={lockingSnapshot || eligibleCount === 0}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center gap-2"
             >
               {lockingSnapshot ? (
@@ -675,7 +744,7 @@ export default function NewGiveawayWizardPage() {
               ) : (
                 <>
                   <Lock className="w-4 h-4" />
-                  Зафиксировать слепок и перейти к розыгрышу ({eligibleParticipants.length}) →
+                  Зафиксировать слепок и перейти к розыгрышу ({eligibleCount}) →
                 </>
               )}
             </button>
@@ -689,76 +758,61 @@ export default function NewGiveawayWizardPage() {
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Шаг 4: Настройки жеребьевки</h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Слепок зафиксирован (<span className="text-emerald-400 font-mono">SNAPSHOT_LOCKED</span>). Алгоритм: <span className="text-amber-400 font-mono">HMAC_SHA256_FY_V1</span>
+              Укажите количество призовых и резервных мест
             </p>
           </div>
 
-          {lockedSnapshot && (
-            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Snapshot ID:</span>
-                <span className="font-mono text-slate-300">{lockedSnapshot.id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Хеш слепка участников (SHA-256):</span>
+          <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-purple-300">
+              <Lock className="w-4 h-4 text-purple-400" />
+              <span>Слепок зафиксирован (версия {lockedSnapshot?.version || 1})</span>
+            </div>
+            {lockedSnapshot?.participantsSnapshotHash && (
+              <div className="flex items-center gap-1.5 font-mono text-[11px] text-purple-200">
+                <span className="text-purple-400">Хеш слепка:</span>
                 <span className="font-mono text-emerald-400 truncate max-w-xs">{lockedSnapshot.participantsSnapshotHash}</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Winners Count */}
-            <div className="space-y-2 p-4 bg-slate-950 border border-slate-800 rounded-xl">
-              <label className="block text-xs font-semibold text-slate-300">
-                Количество основных победителей
-              </label>
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <label className="text-xs font-semibold text-white">Количество победителей</label>
               <input
                 type="number"
                 min={1}
-                max={Math.max(1, eligibleParticipants.length)}
+                max={Math.max(1, eligibleCount)}
                 value={winnersCount}
                 onChange={(e) => setWinnersCount(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold text-base focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
               />
-              <p className="text-[11px] text-slate-400">Призовых мест</p>
             </div>
 
-            {/* Reserve Winners Count */}
-            <div className="space-y-2 p-4 bg-slate-950 border border-slate-800 rounded-xl">
-              <label className="block text-xs font-semibold text-slate-300">
-                Количество резервных победителей
-              </label>
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <label className="text-xs font-semibold text-white">Резервные победители</label>
               <input
                 type="number"
                 min={0}
-                max={Math.max(0, eligibleParticipants.length - winnersCount)}
+                max={Math.max(0, eligibleCount - winnersCount)}
                 value={reserveWinnersCount}
                 onChange={(e) => setReserveWinnersCount(Math.max(0, parseInt(e.target.value) || 0))}
-                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-bold text-base focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
               />
-              <p className="text-[11px] text-slate-400">На случай невыхода на связь</p>
             </div>
           </div>
 
-          {/* Seed configuration */}
-          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Shuffle className="w-3.5 h-3.5 text-blue-400" />
-                Seed розыгрыша (опционально)
-              </label>
-              <span className="text-[10px] text-slate-400">CSPRNG / crypto.randomBytes</span>
-            </div>
+          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+              <span>Пользовательская соль / Seed (опционально)</span>
+              <Info className="w-3.5 h-3.5 text-slate-400" />
+            </label>
             <input
               type="text"
-              placeholder="Оставьте пустым для генерации крипто-стойкого CSPRNG seed"
+              placeholder="Оставьте пустым для генерации CSPRNG соли или введите публичный seed"
               value={seed}
               onChange={(e) => setSeed(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-blue-500"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500 font-mono text-xs"
             />
-            <p className="text-[11px] text-slate-400">
-              Если seed не задан вручную, система сгенерирует 128-битный криптографический ключ Node.js CSPRNG
-            </p>
           </div>
 
           <div className="flex justify-between items-center pt-4 border-t border-slate-800">

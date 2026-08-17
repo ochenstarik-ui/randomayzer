@@ -156,7 +156,12 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     const gw = this.giveaways.get(id);
     if (!gw) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
-    GiveawayFSM.assertCanModifyParticipants(gw.status);
+    if (gw.status !== 'READY') {
+      throw new ConflictError(
+        `Cannot modify participants: giveaway "${id}" is in status "${gw.status}", but requires "READY"`
+      );
+    }
+
     gw.participants = participants;
     gw.status = 'READY';
     gw.updatedAt = new Date().toISOString();

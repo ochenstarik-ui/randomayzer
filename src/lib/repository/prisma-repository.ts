@@ -1,11 +1,11 @@
-import { prisma } from '../prisma';
 import { 
   IGiveawayRepository, 
   CreateGiveawayInput, 
-  GiveawayWithRelations, 
+  GiveawayWithRelations,
   GiveawaySummary,
   PaginatedParticipantsResult
 } from './giveaway-repository';
+import { prisma } from '../prisma';
 import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/giveaway';
 import { FilteredParticipant } from '../../core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '../../core/types/audit';
@@ -36,28 +36,21 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       giveawayId: s.giveawayId,
       version: s.version,
       createdAt: s.createdAt.toISOString(),
-      eligibleParticipants: s.eligibleParticipants as FilteredParticipant[],
-      filterRulesSnapshot: s.filterRulesSnapshot as FilterRules,
+      eligibleParticipants: (s.eligibleParticipants as any) || [],
+      filterRulesSnapshot: (s.filterRulesSnapshot as any) || {},
       participantCount: s.participantCount,
       participantsSnapshotHash: s.participantsSnapshotHash,
       conditionsHash: s.conditionsHash,
     }));
 
-    const latestSnapshot = snapshots.length > 0 
-      ? [...snapshots].sort((a, b) => b.version - a.version)[0] 
-      : null;
+    const latestSnapshot = snapshots.length > 0 ? snapshots[0] : null;
 
     let drawResult: DrawExecutionResult | null = null;
     if (raw.drawResult) {
-      const boundSnapshot = raw.drawResult.snapshot 
-        ? {
-            participantsSnapshotHash: raw.drawResult.snapshot.participantsSnapshotHash,
-            conditionsHash: raw.drawResult.snapshot.conditionsHash,
-          }
-        : snapshots.find(s => s.id === raw.drawResult.snapshotId) || latestSnapshot;
+      const boundSnapshot = snapshots.find(s => s.id === raw.drawResult.snapshotId) || latestSnapshot;
 
       drawResult = {
-        drawId: raw.drawResult.drawId || raw.drawResult.id,
+        drawId: raw.drawResult.drawId,
         giveawayId: raw.drawResult.giveawayId,
         snapshotId: raw.drawResult.snapshotId,
         winners: raw.drawResult.winners as any,
@@ -67,12 +60,12 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         totalEligibleCount: raw.drawResult.totalEligibleCount,
         totalLoadedCount: raw.drawResult.totalLoadedCount,
         seedUsed: raw.drawResult.seedUsed,
-        participantsSnapshotHash: boundSnapshot?.participantsSnapshotHash || '',
-        conditionsHash: boundSnapshot?.conditionsHash || '',
-        algorithmVersion: raw.drawResult.algorithmVersion,
+        algorithmVersion: raw.drawResult.algorithmVersion as any,
         deterministicProofHash: raw.drawResult.deterministicProofHash,
         auditEventHash: raw.drawResult.auditEventHash,
         drawnAt: raw.drawResult.drawnAt.toISOString(),
+        participantsSnapshotHash: boundSnapshot?.participantsSnapshotHash || '',
+        conditionsHash: boundSnapshot?.conditionsHash || '',
       };
     }
 
@@ -89,7 +82,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       postCommentsCount: raw.postCommentsCount,
       postRepostsCount: raw.postRepostsCount,
       status: raw.status as GiveawayStatusType,
-      filterRules: raw.filterRules as FilterRules,
+      filterRules: raw.filterRules as any,
       winnersCount: raw.winnersCount,
       reserveWinnersCount: raw.reserveWinnersCount,
       seed: raw.seed,
@@ -300,12 +293,29 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
   }
 
   async saveParticipants(id: string, participants: FilteredParticipant[]): Promise<GiveawayWithRelations> {
-    const current = await this.getGiveawayById(id);
-    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
-
-    GiveawayFSM.assertCanModifyParticipants(current.status);
-
     await prisma.$transaction(async (tx) => {
+      // Atomic conditional status guard: only allow replacing participants if status is READY
+      const updateRes = await tx.giveaway.updateMany({
+        where: {
+          id,
+          status: 'READY',
+        },
+        data: {
+          status: 'READY',
+          updatedAt: new Date(),
+        },
+      });
+
+      if (updateRes.count === 0) {
+        const check = await tx.giveaway.findUnique({ where: { id } });
+        if (!check) {
+          throw new NotFoundError(`Giveaway with id "${id}" not found`);
+        }
+        throw new ConflictError(
+          `Cannot modify participants: giveaway "${id}" is in status "${check.status}", but requires "READY"`
+        );
+      }
+
       await tx.participant.deleteMany({ where: { giveawayId: id } });
 
       if (participants.length > 0) {
@@ -328,11 +338,6 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
           })),
         });
       }
-
-      await tx.giveaway.update({
-        where: { id },
-        data: { status: 'READY' },
-      });
     });
 
     const updated = await this.getGiveawayById(id);

@@ -81,15 +81,13 @@ export async function POST(
     // Save atomic participant state in store
     const updated = await GiveawayStore.updateParticipants(id, allParticipants);
 
+    // Return summary only (no massive arrays in POST response)
     const responseBody = {
       success: true,
       giveawayId: updated.id,
       totalCount: allParticipants.length,
       eligibleCount: eligibleParticipants.length,
       excludedCount: excludedParticipants.length,
-      allParticipants,
-      eligibleParticipants,
-      excludedParticipants,
     };
 
     if (idempotencyKey) {
