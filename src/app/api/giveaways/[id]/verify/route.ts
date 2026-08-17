@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
 import { verifyDrawResult } from '@/core/randomizer/deterministic';
+import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http-errors';
+import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 
 export async function GET(
   req: NextRequest,
@@ -8,25 +10,29 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const giveaway = await GiveawayStore.getById(id);
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    expensiveApiRateLimiter.assertAllowed(`verify-get:${ip}:${id}`);
 
+    const giveaway = await GiveawayStore.getById(id);
     if (!giveaway) {
-      return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
+      throw new NotFoundError(`Giveaway with id "${id}" not found`);
     }
 
     const drawResult = giveaway.drawResult;
     if (!drawResult) {
-      return NextResponse.json({ 
-        error: 'Giveaway has not been drawn yet. Nothing to verify.' 
-      }, { status: 400 });
+      throw new ConflictError('Giveaway has not been drawn yet. Nothing to verify.');
     }
 
     // Strict snapshot lookup: DO NOT fallback to latestSnapshot
     const snapshot = giveaway.snapshots.find(s => s.id === drawResult.snapshotId);
 
     if (!snapshot) {
-      return NextResponse.json({ 
-        error: `Integrity Error: Participant snapshot "${drawResult.snapshotId}" referenced by draw does not exist in storage`,
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: 'INTEGRITY_ERROR',
+          message: `Participant snapshot "${drawResult.snapshotId}" referenced by draw does not exist in storage`,
+        },
         verified: false,
         snapshotFound: false,
       }, { status: 404 });
@@ -52,6 +58,7 @@ export async function GET(
     });
 
     return NextResponse.json({
+      success: true,
       verified: verification.verified,
       giveawayId: id,
       drawId: drawResult.drawId,
@@ -71,6 +78,6 @@ export async function GET(
       drawnAt: drawResult.drawnAt,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return handleApiError(error);
   }
 }

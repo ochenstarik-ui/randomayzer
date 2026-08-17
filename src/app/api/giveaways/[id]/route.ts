@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
+import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
+import { generalApiRateLimiter } from '@/lib/rate-limiter';
 
 export async function GET(
   req: NextRequest,
@@ -7,14 +9,17 @@ export async function GET(
 ) {
   try {
     const { id } = params;
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    generalApiRateLimiter.assertAllowed(`giveaway-get:${ip}`);
+
     const giveaway = await GiveawayStore.getById(id);
 
     if (!giveaway) {
-      return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
+      throw new NotFoundError(`Giveaway with id "${id}" not found`);
     }
 
     return NextResponse.json({ success: true, giveaway });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return handleApiError(error);
   }
 }

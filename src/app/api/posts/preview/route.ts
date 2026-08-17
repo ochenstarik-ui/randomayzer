@@ -1,31 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ProviderRegistry } from '@/providers/registry';
-import { PlatformType } from '@/core/types/giveaway';
+import { ProviderFactory } from '@/providers/factory';
+import { postPreviewSchema } from '@/core/validation/giveaway-schemas';
+import { handleApiError } from '@/core/errors/http-errors';
+import { generalApiRateLimiter } from '@/lib/rate-limiter';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { url, platform = 'VK' } = body;
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    generalApiRateLimiter.assertAllowed(`post-preview:${ip}`);
 
-    if (!url || typeof url !== 'string') {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
-    }
+    const rawBody = await req.json();
+    const validated = postPreviewSchema.parse(rawBody);
 
-    const provider = ProviderRegistry.getProvider(platform as PlatformType);
-    const parsed = provider.parsePostUrl(url);
+    const provider = ProviderFactory.getVkProvider();
+    const post = await provider.fetchPost(validated.url);
 
-    if (!parsed) {
-      return NextResponse.json({ 
-        error: 'Неверный формат ссылки на запись VK. Пример: https://vk.com/wall-123456_789' 
-      }, { status: 400 });
-    }
-
-    const postMetadata = await provider.fetchPost(url);
-    return NextResponse.json({ success: true, post: postMetadata });
+    return NextResponse.json({
+      success: true,
+      post,
+    });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Ошибка при загрузке данных поста' },
-      { status: 500 }
-    );
+    return handleApiError(error);
   }
 }

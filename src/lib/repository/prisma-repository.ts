@@ -2,13 +2,16 @@ import { prisma } from '../prisma';
 import { 
   IGiveawayRepository, 
   CreateGiveawayInput, 
-  GiveawayWithRelations 
+  GiveawayWithRelations, 
+  GiveawaySummary,
+  PaginatedParticipantsResult
 } from './giveaway-repository';
 import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/giveaway';
 import { FilteredParticipant } from '../../core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '../../core/types/audit';
 import { computeParticipantsSnapshotHash, computeConditionsHash } from '../../core/randomizer/canonical';
 import { GiveawayFSM } from '../../core/fsm/giveaway-fsm';
+import { ConflictError, NotFoundError } from '../../core/errors/http-errors';
 
 export class PrismaGiveawayRepository implements IGiveawayRepository {
   private mapPrismaGiveaway(raw: any): GiveawayWithRelations {
@@ -46,7 +49,6 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
 
     let drawResult: DrawExecutionResult | null = null;
     if (raw.drawResult) {
-      // Strictly bind to the snapshot attached to drawResult
       const boundSnapshot = raw.drawResult.snapshot 
         ? {
             participantsSnapshotHash: raw.drawResult.snapshot.participantsSnapshotHash,
@@ -166,9 +168,119 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     return list.map(item => this.mapPrismaGiveaway(item));
   }
 
+  async listGiveawaysSummary(): Promise<GiveawaySummary[]> {
+    const list = await prisma.giveaway.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        platform: true,
+        sourceUrl: true,
+        platformOwnerId: true,
+        platformPostId: true,
+        title: true,
+        postImageUrl: true,
+        postLikesCount: true,
+        postCommentsCount: true,
+        postRepostsCount: true,
+        status: true,
+        winnersCount: true,
+        reserveWinnersCount: true,
+        createdAt: true,
+        updatedAt: true,
+        drawnAt: true,
+        _count: {
+          select: {
+            participants: true,
+          },
+        },
+        drawResult: {
+          select: {
+            algorithmVersion: true,
+            totalEligibleCount: true,
+          },
+        },
+      },
+    });
+
+    return list.map(item => ({
+      id: item.id,
+      platform: item.platform as PlatformType,
+      sourceUrl: item.sourceUrl,
+      platformOwnerId: item.platformOwnerId,
+      platformPostId: item.platformPostId,
+      title: item.title,
+      postImageUrl: item.postImageUrl,
+      postLikesCount: item.postLikesCount,
+      postCommentsCount: item.postCommentsCount,
+      postRepostsCount: item.postRepostsCount,
+      status: item.status as GiveawayStatusType,
+      winnersCount: item.winnersCount,
+      reserveWinnersCount: item.reserveWinnersCount,
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString(),
+      drawnAt: item.drawnAt ? item.drawnAt.toISOString() : null,
+      totalParticipantsCount: item._count.participants,
+      eligibleParticipantsCount: item.drawResult?.totalEligibleCount || 0,
+      hasDrawResult: Boolean(item.drawResult),
+      algorithmVersion: item.drawResult?.algorithmVersion || null,
+    }));
+  }
+
+  async getParticipantsPaginated(
+    id: string, 
+    page: number = 1, 
+    pageSize: number = 50, 
+    tab: 'all' | 'eligible' | 'excluded' = 'all'
+  ): Promise<PaginatedParticipantsResult> {
+    const whereClause: any = { giveawayId: id };
+    if (tab === 'eligible') whereClause.eligible = true;
+    if (tab === 'excluded') whereClause.eligible = false;
+
+    const [totalCount, eligibleCount, excludedCount, items] = await prisma.$transaction([
+      prisma.participant.count({ where: { giveawayId: id } }),
+      prisma.participant.count({ where: { giveawayId: id, eligible: true } }),
+      prisma.participant.count({ where: { giveawayId: id, eligible: false } }),
+      prisma.participant.findMany({
+        where: whereClause,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { platformUserId: 'asc' },
+      }),
+    ]);
+
+    const participants: FilteredParticipant[] = items.map(p => ({
+      platformUserId: p.platformUserId,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      username: p.username || undefined,
+      avatarUrl: p.avatarUrl || undefined,
+      source: p.source,
+      liked: p.liked,
+      commented: p.commented,
+      commentsCount: p.commentsCount,
+      reposted: p.reposted,
+      subscribed: p.subscribed,
+      eligible: p.eligible,
+      exclusionReason: p.exclusionReason,
+    }));
+
+    const relevantCount = tab === 'eligible' ? eligibleCount : tab === 'excluded' ? excludedCount : totalCount;
+    const totalPages = Math.ceil(relevantCount / pageSize) || 1;
+
+    return {
+      participants,
+      page,
+      pageSize,
+      totalCount,
+      eligibleCount,
+      excludedCount,
+      totalPages,
+    };
+  }
+
   async updateStatus(id: string, newStatus: GiveawayStatusType): Promise<GiveawayWithRelations> {
     const current = await this.getGiveawayById(id);
-    if (!current) throw new Error(`Giveaway with id "${id}" not found`);
+    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
     GiveawayFSM.validateTransition(current.status, newStatus);
 
@@ -189,7 +301,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
 
   async saveParticipants(id: string, participants: FilteredParticipant[]): Promise<GiveawayWithRelations> {
     const current = await this.getGiveawayById(id);
-    if (!current) throw new Error(`Giveaway with id "${id}" not found`);
+    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
     GiveawayFSM.assertCanModifyParticipants(current.status);
 
@@ -233,56 +345,75 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     rules: FilterRules
   ): Promise<ParticipantSnapshotData> {
     const current = await this.getGiveawayById(id);
-    if (!current) throw new Error(`Giveaway with id "${id}" not found`);
+    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
     if (current.status === 'DRAWN' || current.status === 'PUBLISHED') {
-      throw new Error(`Cannot lock snapshot in final status "${current.status}"`);
+      throw new ConflictError(`Cannot lock snapshot in final status "${current.status}"`);
     }
 
     if (eligibleParticipants.length === 0) {
-      throw new Error('Cannot create snapshot with 0 eligible participants');
+      throw new ConflictError('Cannot create snapshot with 0 eligible participants');
     }
 
     const participantsSnapshotHash = computeParticipantsSnapshotHash(eligibleParticipants);
     const conditionsHash = computeConditionsHash(rules);
 
-    const latestVersion = current.snapshots.length > 0
-      ? Math.max(...current.snapshots.map(s => s.version))
-      : 0;
-    const newVersion = latestVersion + 1;
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // Atomic status guard
+        const updateRes = await tx.giveaway.updateMany({
+          where: {
+            id,
+            status: { in: ['READY', 'SNAPSHOT_LOCKED'] },
+          },
+          data: {
+            status: 'SNAPSHOT_LOCKED',
+            filterRules: rules as any,
+          },
+        });
 
-    const [snapshot] = await prisma.$transaction([
-      prisma.participantSnapshot.create({
-        data: {
-          giveawayId: id,
-          version: newVersion,
-          eligibleParticipants: eligibleParticipants as any,
-          filterRulesSnapshot: rules as any,
-          participantCount: eligibleParticipants.length,
-          participantsSnapshotHash,
-          conditionsHash,
-        },
-      }),
-      prisma.giveaway.update({
-        where: { id },
-        data: {
-          status: 'SNAPSHOT_LOCKED',
-          filterRules: rules as any,
-        },
-      }),
-    ]);
+        if (updateRes.count === 0) {
+          throw new ConflictError(`Concurrent modification or invalid status for giveaway "${id}"`);
+        }
 
-    return {
-      id: snapshot.id,
-      giveawayId: snapshot.giveawayId,
-      version: snapshot.version,
-      createdAt: snapshot.createdAt.toISOString(),
-      eligibleParticipants: eligibleParticipants,
-      filterRulesSnapshot: rules,
-      participantCount: snapshot.participantCount,
-      participantsSnapshotHash: snapshot.participantsSnapshotHash,
-      conditionsHash: snapshot.conditionsHash,
-    };
+        const latestSnap = await tx.participantSnapshot.findFirst({
+          where: { giveawayId: id },
+          orderBy: { version: 'desc' },
+        });
+
+        const newVersion = (latestSnap?.version || 0) + 1;
+
+        const snapshot = await tx.participantSnapshot.create({
+          data: {
+            giveawayId: id,
+            version: newVersion,
+            eligibleParticipants: eligibleParticipants as any,
+            filterRulesSnapshot: rules as any,
+            participantCount: eligibleParticipants.length,
+            participantsSnapshotHash,
+            conditionsHash,
+          },
+        });
+
+        return {
+          id: snapshot.id,
+          giveawayId: snapshot.giveawayId,
+          version: snapshot.version,
+          createdAt: snapshot.createdAt.toISOString(),
+          eligibleParticipants,
+          filterRulesSnapshot: rules,
+          participantCount: snapshot.participantCount,
+          participantsSnapshotHash: snapshot.participantsSnapshotHash,
+          conditionsHash: snapshot.conditionsHash,
+        };
+      });
+    } catch (err: any) {
+      if (err instanceof ConflictError) throw err;
+      if (err?.code === 'P2002') {
+        throw new ConflictError('Concurrent snapshot creation conflict. Please retry.');
+      }
+      throw err;
+    }
   }
 
   async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {
@@ -312,61 +443,78 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     result: DrawExecutionResult
   ): Promise<GiveawayWithRelations> {
     const current = await this.getGiveawayById(id);
-    if (!current) throw new Error(`Giveaway with id "${id}" not found`);
+    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
     GiveawayFSM.assertCanDraw(current.status);
 
-    await prisma.$transaction(async (tx) => {
-      // 1. Create DrawResult with original drawId
-      await tx.drawResult.create({
-        data: {
-          drawId: result.drawId,
-          giveawayId: id,
-          snapshotId: snapshotId,
-          winners: result.winners as any,
-          reserveWinners: result.reserveWinners as any,
-          winnerIds: result.winnerIds as any,
-          reserveWinnerIds: result.reserveWinnerIds as any,
-          totalEligibleCount: result.totalEligibleCount,
-          totalLoadedCount: result.totalLoadedCount,
-          seedUsed: result.seedUsed,
-          algorithmVersion: result.algorithmVersion,
-          deterministicProofHash: result.deterministicProofHash,
-          auditEventHash: result.auditEventHash,
-          drawnAt: new Date(result.drawnAt),
-        },
-      });
+    try {
+      await prisma.$transaction(async (tx) => {
+        // 1. Atomic conditional transition SNAPSHOT_LOCKED -> DRAWN
+        const updatedStatus = await tx.giveaway.updateMany({
+          where: {
+            id,
+            status: 'SNAPSHOT_LOCKED',
+          },
+          data: {
+            status: 'DRAWN',
+            drawnAt: new Date(result.drawnAt),
+            seed: result.seedUsed,
+          },
+        });
 
-      // 2. Create AuditRecord
-      await tx.auditRecord.create({
-        data: {
-          giveawayId: id,
-          snapshotId: snapshotId,
-          algorithmVersion: result.algorithmVersion,
-          seed: result.seedUsed,
-          participantsSnapshotHash: result.participantsSnapshotHash,
-          conditionsHash: result.conditionsHash,
-          deterministicProofHash: result.deterministicProofHash,
-          auditEventHash: result.auditEventHash,
-          winnerIds: result.winnerIds as any,
-          reserveWinnerIds: result.reserveWinnerIds as any,
-          eligibleCount: result.totalEligibleCount,
-          drawId: result.drawId,
-          drawnAt: new Date(result.drawnAt),
-          verifiedAt: new Date(),
-        },
-      });
+        if (updatedStatus.count === 0) {
+          throw new ConflictError(
+            `Cannot draw giveaway "${id}": giveaway is not in SNAPSHOT_LOCKED status or has already been drawn`
+          );
+        }
 
-      // 3. Update Giveaway status to DRAWN
-      await tx.giveaway.update({
-        where: { id },
-        data: {
-          status: 'DRAWN',
-          drawnAt: new Date(result.drawnAt),
-          seed: result.seedUsed,
-        },
+        // 2. Create DrawResult with unique constraint on giveawayId and snapshotId
+        await tx.drawResult.create({
+          data: {
+            drawId: result.drawId,
+            giveawayId: id,
+            snapshotId: snapshotId,
+            winners: result.winners as any,
+            reserveWinners: result.reserveWinners as any,
+            winnerIds: result.winnerIds as any,
+            reserveWinnerIds: result.reserveWinnerIds as any,
+            totalEligibleCount: result.totalEligibleCount,
+            totalLoadedCount: result.totalLoadedCount,
+            seedUsed: result.seedUsed,
+            algorithmVersion: result.algorithmVersion,
+            deterministicProofHash: result.deterministicProofHash,
+            auditEventHash: result.auditEventHash,
+            drawnAt: new Date(result.drawnAt),
+          },
+        });
+
+        // 3. Create AuditRecord
+        await tx.auditRecord.create({
+          data: {
+            giveawayId: id,
+            snapshotId: snapshotId,
+            algorithmVersion: result.algorithmVersion,
+            seed: result.seedUsed,
+            participantsSnapshotHash: result.participantsSnapshotHash,
+            conditionsHash: result.conditionsHash,
+            deterministicProofHash: result.deterministicProofHash,
+            auditEventHash: result.auditEventHash,
+            winnerIds: result.winnerIds as any,
+            reserveWinnerIds: result.reserveWinnerIds as any,
+            eligibleCount: result.totalEligibleCount,
+            drawId: result.drawId,
+            drawnAt: new Date(result.drawnAt),
+            verifiedAt: new Date(),
+          },
+        });
       });
-    });
+    } catch (err: any) {
+      if (err instanceof ConflictError) throw err;
+      if (err?.code === 'P2002') {
+        throw new ConflictError(`Giveaway "${id}" has already been drawn.`);
+      }
+      throw err;
+    }
 
     const updated = await this.getGiveawayById(id);
     return updated!;

@@ -1,4 +1,10 @@
-import { IGiveawayRepository, GiveawayWithRelations, CreateGiveawayInput } from './repository/giveaway-repository';
+import { 
+  IGiveawayRepository, 
+  GiveawayWithRelations, 
+  GiveawaySummary,
+  PaginatedParticipantsResult,
+  CreateGiveawayInput 
+} from './repository/giveaway-repository';
 import { PrismaGiveawayRepository } from './repository/prisma-repository';
 import { MemoryGiveawayRepository } from './repository/memory-repository';
 import { FilterRules } from '../core/types/giveaway';
@@ -7,7 +13,6 @@ import { DrawExecutionResult, ParticipantSnapshotData } from '../core/types/audi
 
 export type StoredGiveaway = GiveawayWithRelations;
 
-// Select initial repository based on explicit STORAGE_DRIVER configuration
 function createDefaultRepository(): IGiveawayRepository {
   if (process.env.STORAGE_DRIVER === 'memory') {
     return new MemoryGiveawayRepository();
@@ -18,9 +23,6 @@ function createDefaultRepository(): IGiveawayRepository {
 let activeRepository: IGiveawayRepository = createDefaultRepository();
 
 export class GiveawayStore {
-  /**
-   * Set custom repository (e.g. MemoryGiveawayRepository in tests)
-   */
   static setRepository(repo: IGiveawayRepository): void {
     activeRepository = repo;
   }
@@ -29,9 +31,6 @@ export class GiveawayStore {
     return activeRepository;
   }
 
-  /**
-   * Reset repository to environment default
-   */
   static resetToDefault(): void {
     activeRepository = createDefaultRepository();
   }
@@ -46,6 +45,19 @@ export class GiveawayStore {
 
   static async listAll(): Promise<StoredGiveaway[]> {
     return await activeRepository.listGiveaways();
+  }
+
+  static async listSummaries(): Promise<GiveawaySummary[]> {
+    return await activeRepository.listGiveawaysSummary();
+  }
+
+  static async getParticipantsPaginated(
+    id: string,
+    page: number = 1,
+    pageSize: number = 50,
+    tab: 'all' | 'eligible' | 'excluded' = 'all'
+  ): Promise<PaginatedParticipantsResult> {
+    return await activeRepository.getParticipantsPaginated(id, page, pageSize, tab);
   }
 
   static async updateParticipants(id: string, participants: FilteredParticipant[]): Promise<StoredGiveaway> {

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
-import { executeDeterministicDrawV1 } from '@/core/randomizer/deterministic';
-import { generateCryptoSecureSeed } from '@/core/randomizer/hasher';
 import { GiveawayFSM } from '@/core/fsm/giveaway-fsm';
+import { generateCryptoSecureSeed } from '@/core/randomizer/hasher';
+import { executeDeterministicDrawV1 } from '@/core/randomizer/deterministic';
+import { executeDrawSchema } from '@/core/validation/giveaway-schemas';
+import { handleApiError, NotFoundError, ConflictError } from '@/core/errors/http-errors';
+import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 
 export async function POST(
   req: NextRequest,
@@ -10,42 +13,35 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const body = await req.json().catch(() => ({}));
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    expensiveApiRateLimiter.assertAllowed(`draw-execute:${ip}:${id}`);
+
     const giveaway = await GiveawayStore.getById(id);
-
     if (!giveaway) {
-      return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
+      throw new NotFoundError(`Giveaway with id "${id}" not found`);
     }
 
-    // 1. Guard check with FSM
-    if (giveaway.status === 'DRAWN') {
-      return NextResponse.json({
-        error: 'Розыгрыш уже проведен. Повторный запуск строго запрещен.',
-      }, { status: 400 });
-    }
+    // 1. Strict FSM Guard: Draw is permitted ONLY in SNAPSHOT_LOCKED status
+    GiveawayFSM.assertCanDraw(giveaway.status);
 
-    // 2. Fetch locked snapshot (or lock current eligible if ready)
-    let snapshot = await GiveawayStore.getLatestSnapshot(id);
+    // 2. Strict Snapshot requirement: Never create a snapshot implicitly
+    const snapshot = giveaway.latestSnapshot;
     if (!snapshot) {
-      const eligible = giveaway.participants.filter(p => p.eligible);
-      if (eligible.length === 0) {
-        return NextResponse.json({ 
-          error: 'Нет допущенных участников для создания слепка и розыгрыша' 
-        }, { status: 400 });
-      }
-      snapshot = await GiveawayStore.createAndLockSnapshot(id, eligible, giveaway.filterRules);
+      throw new ConflictError(
+        'Cannot execute draw: no locked participant snapshot exists. Lock a snapshot before drawing.'
+      );
     }
 
-    // Validate status after snapshot lock
-    GiveawayFSM.assertCanDraw('SNAPSHOT_LOCKED');
+    const rawBody = await req.json().catch(() => ({}));
+    const validated = executeDrawSchema.parse(rawBody);
 
-    const winnersCount = body.winnersCount || giveaway.winnersCount || 1;
-    const reserveWinnersCount = body.reserveWinnersCount ?? giveaway.reserveWinnersCount ?? 0;
-    
-    // Seed must be generated with CSPRNG if not provided
-    const seed = body.seed?.trim() || giveaway.seed || generateCryptoSecureSeed();
+    const winnersCount = validated.winnersCount;
+    const reserveWinnersCount = validated.reserveWinnersCount;
 
-    // 3. Execute Provably Fair Randomizer V1
+    // Use CSPRNG crypto.randomBytes seed if none provided (Math.random is strictly forbidden)
+    const seed = (validated.seed && validated.seed.trim()) || generateCryptoSecureSeed();
+
+    // 3. Execute Provably Fair Fisher-Yates Draw V1
     const drawResult = executeDeterministicDrawV1({
       giveawayId: id,
       snapshot,
@@ -56,15 +52,15 @@ export async function POST(
       filterRules: giveaway.filterRules,
     });
 
-    // 4. Persist DrawResult and AuditRecord atomically
+    // 4. Save DrawResult & AuditRecord in database with atomic status transition
     const updatedGiveaway = await GiveawayStore.saveDrawResult(id, snapshot.id, drawResult);
 
     return NextResponse.json({
       success: true,
-      drawResult,
       giveaway: updatedGiveaway,
+      drawResult,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return handleApiError(error);
   }
 }

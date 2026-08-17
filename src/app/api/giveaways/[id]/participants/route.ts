@@ -1,8 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
-import { ProviderRegistry } from '@/providers/registry';
+import { ProviderFactory } from '@/providers/factory';
 import { executeParticipantPipeline } from '@/core/pipeline/participant-enricher';
-import { validateFilterRulesAgainstProviderCapabilities } from '@/core/filtering/rule-validation';
+import { fetchParticipantsSchema, validateProviderCapabilities } from '@/core/validation/giveaway-schemas';
+import { handleApiError, NotFoundError } from '@/core/errors/http-errors';
+import { expensiveApiRateLimiter, generalApiRateLimiter } from '@/lib/rate-limiter';
+import { IdempotencyStore } from '@/lib/idempotency';
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    generalApiRateLimiter.assertAllowed(`participants-get:${ip}`);
+
+    const { searchParams } = new URL(req.url);
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') || '50', 10)));
+    const tabParam = searchParams.get('tab') || 'all';
+    const tab = (tabParam === 'eligible' || tabParam === 'excluded') ? tabParam : 'all';
+
+    const result = await GiveawayStore.getParticipantsPaginated(id, page, pageSize, tab);
+
+    return NextResponse.json({
+      success: true,
+      ...result,
+    });
+  } catch (error: any) {
+    return handleApiError(error);
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -10,54 +39,65 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const body = await req.json().catch(() => ({}));
+    const ip = req.headers.get('x-forwarded-for') || 'anonymous';
+    expensiveApiRateLimiter.assertAllowed(`participants-import:${ip}:${id}`);
+
+    const idempotencyKey = req.headers.get('idempotency-key');
+    if (idempotencyKey) {
+      const cached = IdempotencyStore.get(`import-part:${idempotencyKey}`);
+      if (cached) {
+        return NextResponse.json(cached.body, { status: cached.statusCode });
+      }
+    }
+
     const giveaway = await GiveawayStore.getById(id);
-
     if (!giveaway) {
-      return NextResponse.json({ error: 'Giveaway not found' }, { status: 404 });
+      throw new NotFoundError(`Giveaway with id "${id}" not found`);
     }
 
-    const rules = body.filterRules || giveaway.filterRules;
-    const provider = ProviderRegistry.getProvider(giveaway.platform);
+    const rawBody = await req.json();
+    const validated = fetchParticipantsSchema.parse(rawBody);
 
-    // Reject filter rules the selected provider cannot actually verify
-    const capabilityCheck = validateFilterRulesAgainstProviderCapabilities(rules, provider.capabilities);
-    if (!capabilityCheck.valid) {
-      return NextResponse.json(
-        { error: 'Unsupported filter rules', details: capabilityCheck.errors },
-        { status: 400 }
-      );
-    }
+    const provider = ProviderFactory.getVkProvider();
+    validateProviderCapabilities(validated.filterRules, provider.capabilities);
 
-    // 1. Fetch raw participants
+    // Fetch raw participants from social provider
     const rawParticipants = await provider.fetchParticipants({
       ownerId: giveaway.platformOwnerId,
       postId: giveaway.platformPostId,
-      sourceUrl: giveaway.sourceUrl,
-      includeLikes: true,
-      includeComments: rules.requireComment,
-      includeReposts: rules.requireRepost,
+      includeLikes: validated.filterRules.requireLike,
+      includeComments: validated.filterRules.requireComment,
     });
 
-    // 2. Run enrichment pipeline (subscription check + filter engine)
-    const filterResult = await executeParticipantPipeline({
-      rawParticipants,
-      rules,
-      provider,
-      ownerId: giveaway.platformOwnerId,
-    });
+    // Run participant fetch, enrichment, and filtering pipeline
+    const { allParticipants, eligibleParticipants, excludedParticipants } =
+      await executeParticipantPipeline({
+        rawParticipants,
+        rules: validated.filterRules,
+        provider,
+        ownerId: giveaway.platformOwnerId,
+      });
 
-    // 3. Save participants into persistent database
-    await GiveawayStore.updateParticipants(id, filterResult.allParticipants);
+    // Save atomic participant state in store
+    const updated = await GiveawayStore.updateParticipants(id, allParticipants);
 
-    return NextResponse.json({
+    const responseBody = {
       success: true,
-      stats: filterResult.stats,
-      allParticipants: filterResult.allParticipants,
-      eligibleCount: filterResult.eligibleParticipants.length,
-      excludedCount: filterResult.excludedParticipants.length,
-    });
+      giveawayId: updated.id,
+      totalCount: allParticipants.length,
+      eligibleCount: eligibleParticipants.length,
+      excludedCount: excludedParticipants.length,
+      allParticipants,
+      eligibleParticipants,
+      excludedParticipants,
+    };
+
+    if (idempotencyKey) {
+      IdempotencyStore.set(`import-part:${idempotencyKey}`, 200, responseBody);
+    }
+
+    return NextResponse.json(responseBody);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return handleApiError(error);
   }
 }

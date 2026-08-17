@@ -13,10 +13,10 @@ import {
   ArrowRight,
   RefreshCw,
 } from 'lucide-react';
-import { StoredGiveaway } from '@/lib/giveaway-store';
+import { GiveawaySummary } from '@/lib/repository/giveaway-repository';
 
 export default function DashboardPage() {
-  const [giveaways, setGiveaways] = useState<StoredGiveaway[]>([]);
+  const [giveaways, setGiveaways] = useState<GiveawaySummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchGiveaways = async () => {
@@ -39,7 +39,7 @@ export default function DashboardPage() {
   }, []);
 
   const completedCount = giveaways.filter(g => g.status === 'DRAWN' || g.status === 'PUBLISHED').length;
-  const totalEligible = giveaways.reduce((acc, g) => acc + (g.drawResult?.totalEligibleCount || 0), 0);
+  const totalEligible = giveaways.reduce((acc, g) => acc + (g.eligibleParticipantsCount || 0), 0);
 
   return (
     <div className="space-y-8">
@@ -152,7 +152,7 @@ export default function DashboardPage() {
                       {gw.title || 'Розыгрыш по записи VK'}
                     </h3>
                     <p className="text-xs text-slate-400 truncate mt-0.5 max-w-md">
-                      {gw.description || gw.sourceUrl}
+                      {gw.sourceUrl}
                     </p>
                     <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-slate-400">
                       <span>Создан: {new Date(gw.createdAt).toLocaleDateString('ru-RU')}</span>
