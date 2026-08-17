@@ -1,4 +1,4 @@
-import { VkClientError } from './vk-errors';
+import { VkClientError, VkCancelledError } from './vk-errors';
 
 export interface VkRetryOptions {
   maxRetries?: number;
@@ -56,7 +56,7 @@ export async function executeWithRetry<T>(
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
     if (signal?.aborted) {
-      throw new Error('Operation aborted');
+      throw new VkCancelledError('Operation aborted by caller signal before attempt');
     }
 
     try {
@@ -71,16 +71,19 @@ export async function executeWithRetry<T>(
       const delay = calculateBackoffDelay(attempt, config);
       if (delay > 0) {
         await new Promise((resolve, reject) => {
-          const timeout = setTimeout(resolve, delay);
+          let timeoutId: NodeJS.Timeout | null = null;
+          const onAbort = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            reject(new VkCancelledError('Operation aborted by caller signal during retry backoff'));
+          };
+
+          timeoutId = setTimeout(() => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            resolve(true);
+          }, delay);
+
           if (signal) {
-            signal.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(timeout);
-                reject(new Error('Operation aborted during retry backoff'));
-              },
-              { once: true }
-            );
+            signal.addEventListener('abort', onAbort, { once: true });
           }
         });
       }

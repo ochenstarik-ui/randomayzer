@@ -6,11 +6,14 @@ import {
 } from './vk-types';
 import { 
   mapVkApiError, 
+  mapHttpStatusError,
   VkTimeoutError, 
+  VkCancelledError,
   VkNetworkError, 
-  VkValidationError 
+  VkValidationError,
+  VkPaginationLimitError
 } from './vk-errors';
-import { validateAuthContext, redactToken } from './vk-auth';
+import { validateAuthContext } from './vk-auth';
 import { IVkRateLimiter, defaultVkRateLimiter } from './vk-rate-limit';
 import { executeWithRetry } from './vk-retry';
 
@@ -48,7 +51,7 @@ export class VkClient implements IVkClient {
   }
 
   /**
-   * Executes a single low-level HTTP call to VK API with timeout and error handling.
+   * Executes a single low-level HTTP call to VK API with explicit separate timeout/cancellation tracking.
    */
   private async executeSingleCall<T>(
     method: string,
@@ -58,26 +61,42 @@ export class VkClient implements IVkClient {
   ): Promise<T> {
     validateAuthContext(authContext);
 
-    // Acquire rate limit slot
+    // 1. Check if caller already aborted before execution starts
+    if (options?.signal?.aborted) {
+      throw new VkCancelledError(`VK request to "${method}" was cancelled by caller before execution`, {
+        method,
+      });
+    }
+
+    // 2. Acquire rate limit slot
     await this.rateLimiter.acquire();
+
+    if (options?.signal?.aborted) {
+      throw new VkCancelledError(`VK request to "${method}" was cancelled by caller while waiting for rate limiter`, {
+        method,
+      });
+    }
 
     const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
     const controller = new AbortController();
+    let timedOut = false;
+    let callerCancelled = false;
     let timeoutId: NodeJS.Timeout | null = null;
 
     if (timeoutMs > 0) {
       timeoutId = setTimeout(() => {
+        timedOut = true;
         controller.abort();
       }, timeoutMs);
     }
 
-    // Merge caller signal if provided
+    const onCallerAbort = () => {
+      callerCancelled = true;
+      controller.abort();
+    };
+
     if (options?.signal) {
-      if (options.signal.aborted) {
-        if (timeoutId) clearTimeout(timeoutId);
-        throw new Error('VK request aborted by caller signal');
-      }
-      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      options.signal.addEventListener('abort', onCallerAbort, { once: true });
     }
 
     const url = `${this.baseUrl}${method}`;
@@ -103,13 +122,8 @@ export class VkClient implements IVkClient {
         signal: controller.signal,
       });
 
-      if (timeoutId) clearTimeout(timeoutId);
-
       if (!response.ok) {
-        throw new VkNetworkError(
-          `VK API HTTP error ${response.status}: ${response.statusText}`,
-          { method, errorCode: response.status }
-        );
+        throw mapHttpStatusError(response.status, response.statusText, method);
       }
 
       const text = await response.text();
@@ -137,26 +151,42 @@ export class VkClient implements IVkClient {
 
       return json.response;
     } catch (err: unknown) {
-      if (timeoutId) clearTimeout(timeoutId);
+      // Precise error classification:
+      if (callerCancelled || options?.signal?.aborted) {
+        throw new VkCancelledError(`VK API call to "${method}" was cancelled by the caller`, {
+          method,
+        });
+      }
 
-      if (controller.signal.aborted) {
+      if (timedOut) {
         throw new VkTimeoutError(`VK API call to "${method}" timed out after ${timeoutMs}ms`, {
           method,
         });
       }
 
       if (err instanceof Error && err.name === 'AbortError') {
-        throw new VkTimeoutError(`VK API call to "${method}" was aborted`, { method });
+        if (options?.signal?.aborted) {
+          throw new VkCancelledError(`VK API call to "${method}" was aborted by caller signal`, {
+            method,
+          });
+        }
+        throw new VkTimeoutError(`VK API call to "${method}" was aborted by timeout`, { method });
       }
 
-      if (err instanceof Error && !(err instanceof VkNetworkError) && !(err as any).category) {
-        // Unhandled fetch network error
+      if (err instanceof Error && !(err as any).category) {
         throw new VkNetworkError(`VK API network error on "${method}": ${err.message}`, {
           method,
         });
       }
 
       throw err;
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      if (options?.signal) {
+        options.signal.removeEventListener('abort', onCallerAbort);
+      }
     }
   }
 
@@ -185,20 +215,25 @@ export class VkClient implements IVkClient {
  * Universal pagination abstraction for VK API methods (offset/count based).
  */
 export async function fetchPaginatedVk<TItem>(
-  options: VkPaginationOptions<TItem>
+  options: VkPaginationOptions<TItem> & { throwOnTruncation?: boolean }
 ): Promise<TItem[]> {
   const pageSize = options.pageSize ?? 100;
   const maxPages = options.maxPages ?? 10000;
+  const throwOnTruncation = options.throwOnTruncation ?? true;
   const allItems: TItem[] = [];
   let offset = 0;
   let page = 0;
+  let recordedTotalCount: number | undefined;
 
   while (page < maxPages) {
     if (options.signal?.aborted) {
-      break;
+      throw new VkCancelledError('VK pagination cancelled by caller signal');
     }
 
     const { items, totalCount } = await options.fetchPage(offset, pageSize, options.signal);
+    if (totalCount !== undefined) {
+      recordedTotalCount = totalCount;
+    }
 
     if (!items || items.length === 0) {
       break;
@@ -218,6 +253,20 @@ export async function fetchPaginatedVk<TItem>(
 
     if (items.length < pageSize) {
       break;
+    }
+  }
+
+  // Safety check against silent truncation
+  if (
+    page >= maxPages &&
+    recordedTotalCount !== undefined &&
+    allItems.length < recordedTotalCount
+  ) {
+    if (throwOnTruncation) {
+      throw new VkPaginationLimitError(
+        `VK pagination reached maxPages safety ceiling (${maxPages} pages) with only ${allItems.length}/${recordedTotalCount} items loaded. Truncation detected.`,
+        { details: { loaded: allItems.length, total: recordedTotalCount, maxPages } }
+      );
     }
   }
 

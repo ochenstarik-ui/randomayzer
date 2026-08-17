@@ -1,6 +1,6 @@
-# VK Client Architecture & Integration Guide
+# VK Client Architecture & Official API Specification
 
-The VK Integration layer is structured into modular, decoupled components located under `src/integrations/vk/`.
+The VK Integration layer is structured into decoupled components located under `src/integrations/vk/`.
 
 ---
 
@@ -25,31 +25,51 @@ The VK Integration layer is structured into modular, decoupled components locate
            [VK API]
 ```
 
-### Core Components
+---
 
-1. **`VkClient` (`src/integrations/vk/vk-client.ts`)**:
-   - Centralizes low-level HTTP communication with VK API.
-   - Enforces default API version `5.199`.
-   - Manages timeouts with `AbortController` (default 15s).
-   - Coordinates outbound rate limiting and retry backoff.
-   - Provides universal pagination helper `fetchPaginatedVk`.
+## Verified VK API Specifications (v5.199)
 
-2. **`VkAuthContext` (`src/integrations/vk/vk-auth.ts`)**:
-   - Represents typed access tokens (`SERVICE`, `USER`, `COMMUNITY`).
-   - Ensures tokens are never leaked into logs, error messages, or persistent audit records.
+### 1. `wall.getById`
+- **Official Docs**: `https://dev.vk.com/ru/method/wall.getById`
+- **Method**: POST/GET `https://api.vk.com/method/wall.getById`
+- **Parameters**: `posts` (e.g. `"-100_12345"`), `extended=1`.
+- **Response**: `{ items: VkWallPost[], profiles?: VkUserProfile[], groups?: VkGroupProfile[] }`.
+- **Behavior**: Returns empty `items: []` or error 210 if post is deleted or wall is private.
 
-3. **`VkRateLimiter` (`src/integrations/vk/vk-rate-limit.ts`)**:
-   - Throttles outbound requests according to VK API thresholds (default: 10 req/sec configurable).
+### 2. `likes.getList`
+- **Official Docs**: `https://dev.vk.com/ru/method/likes.getList`
+- **Method**: POST/GET `https://api.vk.com/method/likes.getList`
+- **Parameters**: `type="post"`, `owner_id`, `item_id`, `filter="likes"`, `extended=1`, `count` (max 100), `offset`.
+- **Response**: `{ count: number, items: VkUserProfile[] }`.
 
-4. **`executeWithRetry` (`src/integrations/vk/vk-retry.ts`)**:
-   - Handles exponential backoff with full jitter for retryable transient errors (5xx server errors, rate limits, network timeouts).
-   - Fast-fails non-retryable errors (auth errors, permissions, private resources, validation).
+### 3. `wall.getComments`
+- **Official Docs**: `https://dev.vk.com/ru/method/wall.getComments`
+- **Method**: POST/GET `https://api.vk.com/method/wall.getComments`
+- **Parameters**: `owner_id`, `post_id`, `extended=1`, `count` (max 100), `offset`, `fields="photo_100,photo_200,screen_name"`.
+- **Response**: `{ count: number, items: VkCommentItem[], profiles?: VkUserProfile[] }`.
+
+### 4. `groups.isMember`
+- **Official Docs**: `https://dev.vk.com/ru/method/groups.isMember`
+- **Method**: POST/GET `https://api.vk.com/method/groups.isMember`
+- **Parameters**: `group_id`, `user_ids` (comma-separated list of IDs up to **500 max** per batch call).
+- **Response**: `Array<{ user_id: number, member: 1 | 0 }>`.
+
+### 5. Reposts Limitation `[CONFIRMED_LIMITATION]`
+- **Official Status**: VK API does **not** provide a public method to list all users who reposted an arbitrary third-party post due to user privacy settings. `wall.getReposts` only works for community managers on their own wall posts.
+- **Provider Flag**: `capabilities.reposts = false`.
+
+### 6. Admin Detection `[UNVERIFIED]`
+- **Official Status**: Checking if a user is an administrator of a target community requires `groups.getMembers` with `filter=managers`, which requires community admin rights.
+- **Provider Flag**: `capabilities.adminDetection = false`.
 
 ---
 
-## Pagination & Scalability
+## Cancellation vs Timeout Lifecycle
 
-- **No Artificial Caps**: Previous limits (e.g. 5,000 likes or 1,000 comments) have been completely removed.
-- **Likes**: Uses `likes.getList` with `filter=likes&extended=1` in batches of 100 up to the total post likes count.
-- **Comments**: Uses `wall.getComments` with `extended=1` and profile enrichment.
-- **Subscription Checks**: Batches up to 500 user IDs per `groups.isMember` call.
+| Failure Mode | Error Class | Retryable? | Behavior |
+|---|---|---|---|
+| Caller `AbortSignal` fires | `VkCancelledError` | **No** | Request aborted immediately; retry engine halts without retry. |
+| Client timeout timer expires | `VkTimeoutError` | **Yes** | Attempt aborted; backoff delay computed and retry initiated up to `maxRetries`. |
+| HTTP 429 Too Many Requests | `VkRateLimitError` | **Yes** | Retryable with backoff. |
+| HTTP 500..504 Server Error | `VkTemporaryError` | **Yes** | Retryable with backoff. |
+| HTTP 400/401/403/404 | `VkClientError` subclasses | **No** | Fast fail. |
