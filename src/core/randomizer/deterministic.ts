@@ -1,10 +1,16 @@
 import { createHash, randomBytes } from 'crypto';
 import { FilteredParticipant, Winner } from '../types/participant';
-import { DrawExecutionParams, DrawExecutionResult, CURRENT_RANDOMIZER_ALGORITHM, ParticipantSnapshotData } from '../types/audit';
+import { 
+  DrawExecutionParams, 
+  DrawExecutionResult, 
+  ALGORITHM_HMAC_SHA256_FY_V1, 
+  ParticipantSnapshotData,
+  VerificationResult
+} from '../types/audit';
 import { DeterministicHmacStream } from './unbiased-sampler';
-import { computeAuditHash } from './canonical';
+import { computeDeterministicProofHash, computeAuditEventHash } from './canonical';
 
-export const ALGORITHM_VERSION_V1 = CURRENT_RANDOMIZER_ALGORITHM; // 'HMAC_SHA256_FY_V1'
+export const ALGORITHM_VERSION_V1 = ALGORITHM_HMAC_SHA256_FY_V1; // 'HMAC_SHA256_FY_V1'
 
 /**
  * Generates an individual audit proof hash for a winner position
@@ -21,8 +27,8 @@ export function generateWinnerProofHash(
 }
 
 /**
- * Executes deterministic Fisher-Yates selection V1 (HMAC_SHA256_FY_V1)
- * with unbiased rejection sampling.
+ * Executes true partial Fisher-Yates shuffle V1 (HMAC_SHA256_FY_V1)
+ * with in-place swap and unbiased rejection sampling.
  */
 export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExecutionResult {
   const {
@@ -40,7 +46,7 @@ export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExe
     throw new Error('Cannot conduct draw with 0 eligible participants in snapshot');
   }
 
-  // 1. Canonical sort to ensure exact invariant input order
+  // 1. Canonical sort to guarantee exact invariant input ordering
   const pool = [...eligible].sort((a, b) =>
     a.platformUserId.localeCompare(b.platformUserId)
   );
@@ -55,39 +61,50 @@ export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExe
   const actualWinnersCount = Math.min(winnersCount, totalNeeded);
   const actualReserveCount = Math.max(0, totalNeeded - actualWinnersCount);
 
+  // 3. True partial Fisher-Yates shuffle: swap pool[i] with pool[j] where j in [i, n-1]
+  for (let i = 0; i < totalNeeded; i++) {
+    const remainingCount = pool.length - i;
+    const offset = stream.sampleUnbiasedIndex(remainingCount);
+    const j = i + offset;
+
+    // In-place swap
+    const temp = pool[i];
+    pool[i] = pool[j];
+    pool[j] = temp;
+  }
+
   const winners: Winner[] = [];
   const reserveWinners: Winner[] = [];
   const winnerIds: string[] = [];
   const reserveWinnerIds: string[] = [];
 
-  // 3. Select Main Winners (Fisher-Yates removal without replacement)
+  // 4. Map Main Winners from pool[0 ... actualWinnersCount - 1]
   for (let i = 0; i < actualWinnersCount; i++) {
-    const selectedIndex = stream.sampleUnbiasedIndex(pool.length);
-    const selectedParticipant = pool.splice(selectedIndex, 1)[0];
+    const selectedParticipant = pool[i];
     const proofHash = generateWinnerProofHash(seed, snapshotHash, i + 1, selectedParticipant.platformUserId);
 
     winners.push({
       position: i + 1,
       isReserve: false,
       participant: selectedParticipant,
-      selectionIndex: selectedIndex,
+      selectionIndex: i,
       proofHash,
     });
     winnerIds.push(selectedParticipant.platformUserId);
   }
 
-  // 4. Select Reserve Winners
+  // 5. Map Reserve Winners from pool[actualWinnersCount ... totalNeeded - 1]
   for (let i = 0; i < actualReserveCount; i++) {
-    const pos = winners.length + i + 1;
-    const selectedIndex = stream.sampleUnbiasedIndex(pool.length);
-    const selectedParticipant = pool.splice(selectedIndex, 1)[0];
+    const idx = actualWinnersCount + i;
+    const pos = idx + 1;
+    const selectedParticipant = pool[idx];
     const proofHash = generateWinnerProofHash(seed, snapshotHash, pos, selectedParticipant.platformUserId);
 
     reserveWinners.push({
       position: pos,
       isReserve: true,
       participant: selectedParticipant,
-      selectionIndex: selectedIndex,
+      selectionIndex: idx,
       proofHash,
     });
     reserveWinnerIds.push(selectedParticipant.platformUserId);
@@ -96,19 +113,24 @@ export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExe
   const drawId = 'draw_' + randomBytes(8).toString('hex');
   const drawnAt = new Date().toISOString();
 
-  // 5. Compute canonical auditHash
-  const auditHash = computeAuditHash({
+  // 6. Compute deterministicProofHash (reproducible upon replay)
+  const deterministicProofHash = computeDeterministicProofHash({
     algorithmVersion: ALGORITHM_VERSION_V1,
-    giveawayId,
     snapshotId: snapshot.id,
-    seed,
     participantsSnapshotHash: snapshotHash,
     conditionsHash,
+    seed,
     winnerIds,
     reserveWinnerIds,
     eligibleCount: eligible.length,
+  });
+
+  // 7. Compute auditEventHash (unique for this draw execution instance)
+  const auditEventHash = computeAuditEventHash({
+    giveawayId,
     drawId,
     drawnAt,
+    deterministicProofHash,
   });
 
   return {
@@ -125,47 +147,69 @@ export function executeDeterministicDrawV1(params: DrawExecutionParams): DrawExe
     participantsSnapshotHash: snapshotHash,
     conditionsHash,
     algorithmVersion: ALGORITHM_VERSION_V1,
+    deterministicProofHash,
+    auditEventHash,
     drawnAt,
-    auditHash,
   };
 }
 
 /**
- * Universal entrypoint (routes to active algorithm version V1)
+ * Universal entrypoint (routes to algorithm version)
  */
 export function executeDeterministicDraw(params: DrawExecutionParams): DrawExecutionResult {
   return executeDeterministicDrawV1(params);
 }
 
 /**
- * Re-runs draw algorithm on a snapshot to verify identical outcome
+ * Re-runs draw algorithm on a snapshot to verify identical outcome and hashes
  */
 export function verifyDrawResult(
   snapshot: ParticipantSnapshotData,
   seed: string,
   claimedWinnersCount: number,
   claimedReserveCount: number,
+  claimedWinnerIds?: string[],
+  claimedDeterministicProofHash?: string,
   algorithmVersion: string = ALGORITHM_VERSION_V1
-): { winners: Winner[]; reserveWinners: Winner[]; winnerIds: string[]; reserveWinnerIds: string[]; auditHash: string } {
+): VerificationResult {
   if (algorithmVersion !== ALGORITHM_VERSION_V1) {
     throw new Error(`Unsupported algorithm version for replay: ${algorithmVersion}`);
   }
 
-  const result = executeDeterministicDrawV1({
+  const replayed = executeDeterministicDrawV1({
     giveawayId: snapshot.giveawayId,
     snapshot,
     totalLoadedCount: snapshot.participantCount,
     winnersCount: claimedWinnersCount,
     reserveWinnersCount: claimedReserveCount,
     seed,
-    filterRules: {} as any,
   });
 
+  const winnersMatch = claimedWinnerIds 
+    ? JSON.stringify(replayed.winnerIds) === JSON.stringify(claimedWinnerIds)
+    : true;
+
+  const deterministicProofHashMatch = claimedDeterministicProofHash
+    ? replayed.deterministicProofHash === claimedDeterministicProofHash
+    : true;
+
+  const snapshotHashMatch = replayed.participantsSnapshotHash === snapshot.participantsSnapshotHash;
+  const conditionsHashMatch = replayed.conditionsHash === snapshot.conditionsHash;
+
+  const verified = winnersMatch && deterministicProofHashMatch && snapshotHashMatch && conditionsHashMatch;
+
   return {
-    winners: result.winners,
-    reserveWinners: result.reserveWinners,
-    winnerIds: result.winnerIds,
-    reserveWinnerIds: result.reserveWinnerIds,
-    auditHash: result.auditHash,
+    verified,
+    algorithmVersion: ALGORITHM_VERSION_V1,
+    winnersMatch,
+    snapshotHashMatch,
+    conditionsHashMatch,
+    deterministicProofHashMatch,
+    expectedWinners: replayed.winners,
+    expectedReserveWinners: replayed.reserveWinners,
+    expectedWinnerIds: replayed.winnerIds,
+    expectedReserveWinnerIds: replayed.reserveWinnerIds,
+    expectedDeterministicProofHash: replayed.deterministicProofHash,
+    actualDeterministicProofHash: claimedDeterministicProofHash || replayed.deterministicProofHash,
   };
 }

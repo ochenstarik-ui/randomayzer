@@ -72,6 +72,7 @@ describe('Deterministic Randomizer V1 (HMAC_SHA256_FY_V1)', () => {
 
     expect(draw1.algorithmVersion).toBe(ALGORITHM_VERSION_V1);
     expect(draw1.participantsSnapshotHash).toBe(draw2.participantsSnapshotHash);
+    expect(draw1.deterministicProofHash).toBe(draw2.deterministicProofHash);
     expect(draw1.winnerIds).toEqual(draw2.winnerIds);
     expect(draw1.reserveWinnerIds).toEqual(draw2.reserveWinnerIds);
     expect(draw1.winners.map(w => w.participant.platformUserId)).toEqual(
@@ -161,11 +162,20 @@ describe('Deterministic Randomizer V1 (HMAC_SHA256_FY_V1)', () => {
       filterRules: DEFAULT_FILTER_RULES,
     });
 
-    const verification = verifyDrawResult(snapshot, seed, 2, 2, ALGORITHM_VERSION_V1);
+    const verification = verifyDrawResult(
+      snapshot,
+      seed,
+      2,
+      2,
+      originalDraw.winnerIds,
+      originalDraw.deterministicProofHash,
+      ALGORITHM_VERSION_V1
+    );
 
-    expect(verification.winnerIds).toEqual(originalDraw.winnerIds);
-    expect(verification.reserveWinnerIds).toEqual(originalDraw.reserveWinnerIds);
-    expect(verification.winners.map(w => w.participant.platformUserId)).toEqual(
+    expect(verification.verified).toBe(true);
+    expect(verification.expectedWinnerIds).toEqual(originalDraw.winnerIds);
+    expect(verification.expectedReserveWinnerIds).toEqual(originalDraw.reserveWinnerIds);
+    expect(verification.expectedWinners.map(w => w.participant.platformUserId)).toEqual(
       originalDraw.winners.map(w => w.participant.platformUserId)
     );
   });

@@ -106,7 +106,8 @@ describe('Repository Persistence & Lifecycle Scenario', () => {
 
     expect(drawResult.winners.length).toBe(1);
     expect(drawResult.reserveWinners.length).toBe(1);
-    expect(drawResult.auditHash).toBeDefined();
+    expect(drawResult.deterministicProofHash).toBeDefined();
+    expect(drawResult.auditEventHash).toBeDefined();
 
     // 5. Persist DrawResult and Audit
     const finishedGw = await repo.saveDrawResultAndAudit(gw.id, snapshot.id, drawResult);
@@ -121,7 +122,8 @@ describe('Repository Persistence & Lifecycle Scenario', () => {
     expect(reloaded).not.toBeNull();
     expect(reloaded?.status).toBe('DRAWN');
     expect(reloaded?.snapshots.length).toBe(1);
-    expect(reloaded?.drawResult?.auditHash).toBe(drawResult.auditHash);
+    expect(reloaded?.drawResult?.deterministicProofHash).toBe(drawResult.deterministicProofHash);
+    expect(reloaded?.drawResult?.auditEventHash).toBe(drawResult.auditEventHash);
     expect(reloaded?.drawResult?.winnerIds).toEqual(drawResult.winnerIds);
   });
 });

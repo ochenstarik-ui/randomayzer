@@ -40,11 +40,19 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     }));
 
     const latestSnapshot = snapshots.length > 0 
-      ? snapshots.sort((a, b) => b.version - a.version)[0] 
+      ? [...snapshots].sort((a, b) => b.version - a.version)[0] 
       : null;
 
     let drawResult: DrawExecutionResult | null = null;
     if (raw.drawResult) {
+      // Strictly bind to the snapshot attached to drawResult
+      const boundSnapshot = raw.drawResult.snapshot 
+        ? {
+            participantsSnapshotHash: raw.drawResult.snapshot.participantsSnapshotHash,
+            conditionsHash: raw.drawResult.snapshot.conditionsHash,
+          }
+        : snapshots.find(s => s.id === raw.drawResult.snapshotId) || latestSnapshot;
+
       drawResult = {
         drawId: raw.drawResult.id,
         giveawayId: raw.drawResult.giveawayId,
@@ -56,11 +64,12 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         totalEligibleCount: raw.drawResult.totalEligibleCount,
         totalLoadedCount: raw.drawResult.totalLoadedCount,
         seedUsed: raw.drawResult.seedUsed,
-        participantsSnapshotHash: latestSnapshot?.participantsSnapshotHash || '',
-        conditionsHash: latestSnapshot?.conditionsHash || '',
+        participantsSnapshotHash: boundSnapshot?.participantsSnapshotHash || '',
+        conditionsHash: boundSnapshot?.conditionsHash || '',
         algorithmVersion: raw.drawResult.algorithmVersion,
+        deterministicProofHash: raw.drawResult.deterministicProofHash,
+        auditEventHash: raw.drawResult.auditEventHash,
         drawnAt: raw.drawResult.drawnAt.toISOString(),
-        auditHash: raw.drawResult.auditHash,
       };
     }
 
@@ -113,7 +122,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       include: {
         participants: true,
         snapshots: true,
-        drawResult: true,
+        drawResult: {
+          include: { snapshot: true },
+        },
       },
     });
 
@@ -128,7 +139,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         snapshots: {
           orderBy: { version: 'desc' },
         },
-        drawResult: true,
+        drawResult: {
+          include: { snapshot: true },
+        },
       },
     });
 
@@ -143,7 +156,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         snapshots: {
           orderBy: { version: 'desc' },
         },
-        drawResult: true,
+        drawResult: {
+          include: { snapshot: true },
+        },
       },
     });
 
@@ -162,7 +177,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       include: {
         participants: true,
         snapshots: true,
-        drawResult: true,
+        drawResult: {
+          include: { snapshot: true },
+        },
       },
     });
 
@@ -176,10 +193,8 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     GiveawayFSM.assertCanModifyParticipants(current.status);
 
     await prisma.$transaction(async (tx) => {
-      // Clear previous live participants
       await tx.participant.deleteMany({ where: { giveawayId: id } });
 
-      // Insert new participants
       if (participants.length > 0) {
         await tx.participant.createMany({
           data: participants.map(p => ({
@@ -311,7 +326,8 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
           totalLoadedCount: result.totalLoadedCount,
           seedUsed: result.seedUsed,
           algorithmVersion: result.algorithmVersion,
-          auditHash: result.auditHash,
+          deterministicProofHash: result.deterministicProofHash,
+          auditEventHash: result.auditEventHash,
           drawnAt: new Date(result.drawnAt),
         },
       });
@@ -325,7 +341,8 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
           seed: result.seedUsed,
           participantsSnapshotHash: result.participantsSnapshotHash,
           conditionsHash: result.conditionsHash,
-          auditHash: result.auditHash,
+          deterministicProofHash: result.deterministicProofHash,
+          auditEventHash: result.auditEventHash,
           winnerIds: result.winnerIds as any,
           reserveWinnerIds: result.reserveWinnerIds as any,
           eligibleCount: result.totalEligibleCount,

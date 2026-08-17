@@ -1,7 +1,8 @@
 import { FilterRules } from './giveaway';
 import { FilteredParticipant, Winner } from './participant';
 
-export const CURRENT_RANDOMIZER_ALGORITHM = 'HMAC_SHA256_FY_V1';
+export const ALGORITHM_HMAC_SHA256_FY_V1 = 'HMAC_SHA256_FY_V1';
+export const CURRENT_RANDOMIZER_ALGORITHM = ALGORITHM_HMAC_SHA256_FY_V1;
 
 export interface ParticipantSnapshotData {
   id: string;
@@ -21,7 +22,7 @@ export interface DrawExecutionParams {
   winnersCount: number;
   reserveWinnersCount: number;
   seed: string;
-  filterRules: FilterRules;
+  filterRules?: FilterRules;
 }
 
 export interface DrawExecutionResult {
@@ -38,8 +39,9 @@ export interface DrawExecutionResult {
   participantsSnapshotHash: string;
   conditionsHash: string;
   algorithmVersion: string;
+  deterministicProofHash: string;
+  auditEventHash: string;
   drawnAt: string; // ISO String
-  auditHash: string;
 }
 
 export interface AuditRecordData {
@@ -50,11 +52,27 @@ export interface AuditRecordData {
   seed: string;
   participantsSnapshotHash: string;
   conditionsHash: string;
-  auditHash: string;
+  deterministicProofHash: string;
+  auditEventHash: string;
   winnerIds: string[];
   reserveWinnerIds: string[];
   eligibleCount: number;
   drawId: string;
   drawnAt: string;
   verifiedAt: string;
+}
+
+export interface VerificationResult {
+  verified: boolean;
+  algorithmVersion: string;
+  winnersMatch: boolean;
+  snapshotHashMatch: boolean;
+  conditionsHashMatch: boolean;
+  deterministicProofHashMatch: boolean;
+  expectedWinners: Winner[];
+  expectedReserveWinners: Winner[];
+  expectedWinnerIds: string[];
+  expectedReserveWinnerIds: string[];
+  expectedDeterministicProofHash: string;
+  actualDeterministicProofHash: string;
 }

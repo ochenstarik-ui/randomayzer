@@ -1,13 +1,21 @@
 import { IGiveawayRepository, GiveawayWithRelations, CreateGiveawayInput } from './repository/giveaway-repository';
 import { PrismaGiveawayRepository } from './repository/prisma-repository';
 import { MemoryGiveawayRepository } from './repository/memory-repository';
-import { FilterRules, GiveawayStatusType } from '../core/types/giveaway';
+import { FilterRules } from '../core/types/giveaway';
 import { FilteredParticipant } from '../core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '../core/types/audit';
 
 export type StoredGiveaway = GiveawayWithRelations;
 
-let activeRepository: IGiveawayRepository = new PrismaGiveawayRepository();
+// Select initial repository based on explicit STORAGE_DRIVER configuration
+function createDefaultRepository(): IGiveawayRepository {
+  if (process.env.STORAGE_DRIVER === 'memory') {
+    return new MemoryGiveawayRepository();
+  }
+  return new PrismaGiveawayRepository();
+}
+
+let activeRepository: IGiveawayRepository = createDefaultRepository();
 
 export class GiveawayStore {
   /**
@@ -21,41 +29,23 @@ export class GiveawayStore {
     return activeRepository;
   }
 
+  /**
+   * Reset repository to environment default
+   */
+  static resetToDefault(): void {
+    activeRepository = createDefaultRepository();
+  }
+
   static async create(input: CreateGiveawayInput): Promise<StoredGiveaway> {
-    try {
-      return await activeRepository.createGiveaway(input);
-    } catch (err) {
-      if (activeRepository instanceof PrismaGiveawayRepository) {
-        console.warn('Prisma DB error, falling back to memory repository:', (err as Error).message);
-        activeRepository = new MemoryGiveawayRepository();
-        return await activeRepository.createGiveaway(input);
-      }
-      throw err;
-    }
+    return await activeRepository.createGiveaway(input);
   }
 
   static async getById(id: string): Promise<StoredGiveaway | null> {
-    try {
-      return await activeRepository.getGiveawayById(id);
-    } catch (err) {
-      if (activeRepository instanceof PrismaGiveawayRepository) {
-        activeRepository = new MemoryGiveawayRepository();
-        return await activeRepository.getGiveawayById(id);
-      }
-      throw err;
-    }
+    return await activeRepository.getGiveawayById(id);
   }
 
   static async listAll(): Promise<StoredGiveaway[]> {
-    try {
-      return await activeRepository.listGiveaways();
-    } catch (err) {
-      if (activeRepository instanceof PrismaGiveawayRepository) {
-        activeRepository = new MemoryGiveawayRepository();
-        return await activeRepository.listGiveaways();
-      }
-      throw err;
-    }
+    return await activeRepository.listGiveaways();
   }
 
   static async updateParticipants(id: string, participants: FilteredParticipant[]): Promise<StoredGiveaway> {

@@ -410,7 +410,7 @@ export default function NewGiveawayWizardPage() {
               </div>
             </label>
 
-            {/* Condition: Subscription (Active & Supported) */}
+            {/* Condition: Subscription */}
             <label className="flex items-start gap-3 p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer transition-colors">
               <input
                 type="checkbox"
@@ -451,7 +451,7 @@ export default function NewGiveawayWizardPage() {
               </div>
             </label>
 
-            {/* Condition: Repost (Explicitly Marked Unsupported by Capability) */}
+            {/* Condition: Repost (Disabled by capability) */}
             <div className="flex items-start gap-3 p-4 rounded-xl bg-slate-950/40 border border-slate-800/50 opacity-60 cursor-not-allowed">
               <input
                 type="checkbox"
@@ -689,7 +689,7 @@ export default function NewGiveawayWizardPage() {
           <div>
             <h2 className="text-xl font-bold text-white mb-1">Шаг 4: Настройки жеребьевки</h2>
             <p className="text-xs sm:text-sm text-slate-400">
-              Слепок участников зафиксирован (Статус: <span className="text-emerald-400 font-mono">SNAPSHOT_LOCKED</span>). Алгоритм: <span className="text-blue-400 font-mono">HMAC_SHA256_FY_V1</span>
+              Слепок зафиксирован (<span className="text-emerald-400 font-mono">SNAPSHOT_LOCKED</span>). Алгоритм: <span className="text-amber-400 font-mono">HMAC_SHA256_FY_V1</span>
             </p>
           </div>
 
@@ -926,8 +926,13 @@ export default function NewGiveawayWizardPage() {
               </div>
 
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 sm:col-span-2">
-                <span className="text-slate-400 font-medium">Канонический auditHash:</span>
-                <p className="font-mono text-indigo-300 break-all">{drawResult.auditHash}</p>
+                <span className="text-slate-400 font-medium">deterministicProofHash (воспроизводимый):</span>
+                <p className="font-mono text-indigo-300 break-all">{drawResult.deterministicProofHash}</p>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1 sm:col-span-2">
+                <span className="text-slate-400 font-medium">auditEventHash (уникальный для события):</span>
+                <p className="font-mono text-slate-400 break-all">{drawResult.auditEventHash}</p>
               </div>
             </div>
 

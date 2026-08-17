@@ -71,20 +71,29 @@ export function computeParticipantsSnapshotHash(participants: FilteredParticipan
 }
 
 /**
- * Computes canonical auditHash for the audit record
+ * Computes deterministic proof hash (reproducible on replay)
  */
-export function computeAuditHash(data: {
+export function computeDeterministicProofHash(data: {
   algorithmVersion: string;
-  giveawayId: string;
   snapshotId: string;
-  seed: string;
   participantsSnapshotHash: string;
   conditionsHash: string;
+  seed: string;
   winnerIds: string[];
   reserveWinnerIds: string[];
   eligibleCount: number;
+}): string {
+  return sha256(canonicalStringify(data));
+}
+
+/**
+ * Computes unique audit event hash (binds specific execution event metadata to the deterministic proof)
+ */
+export function computeAuditEventHash(data: {
+  giveawayId: string;
   drawId: string;
   drawnAt: string;
+  deterministicProofHash: string;
 }): string {
   return sha256(canonicalStringify(data));
 }
