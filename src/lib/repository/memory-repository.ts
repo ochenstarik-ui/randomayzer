@@ -18,6 +18,10 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
   private drawLocks: Set<string> = new Set();
 
   async createGiveaway(input: CreateGiveawayInput): Promise<GiveawayWithRelations> {
+    if (!input.organizerId) {
+      throw new Error('FATAL: organizerId is strictly required to create a giveaway in repository');
+    }
+
     const id = 'gw_' + Math.random().toString(36).slice(2, 10);
     const now = new Date().toISOString();
 
@@ -38,7 +42,7 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       winnersCount: input.winnersCount || 1,
       reserveWinnersCount: input.reserveWinnersCount || 0,
       seed: input.seed || null,
-      organizerId: input.organizerId || null,
+      organizerId: input.organizerId,
       createdAt: now,
       updatedAt: now,
       drawnAt: null,
@@ -99,7 +103,7 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       status: gw.status,
       winnersCount: gw.winnersCount,
       reserveWinnersCount: gw.reserveWinnersCount,
-      organizerId: gw.organizerId || null,
+      organizerId: gw.organizerId,
       createdAt: gw.createdAt,
       updatedAt: gw.updatedAt,
       drawnAt: gw.drawnAt,

@@ -26,6 +26,7 @@ export async function requireAuthenticatedUser(req: NextRequest): Promise<Sessio
 
 /**
  * Enforces that a request is authenticated AND that the current user is the verified organizer (owner) of the giveaway.
+ * Invariant: A giveaway without an owner (organizerId is null/empty) must NEVER authorize any user.
  */
 export async function requireGiveawayOwner(
   req: NextRequest,
@@ -42,8 +43,12 @@ export async function requireGiveawayOwner(
     throw new NotFoundError(`Giveaway with id "${giveawayId}" not found`);
   }
 
-  // If the giveaway has an organizerId, strict owner match is enforced
-  if (giveaway.organizerId && giveaway.organizerId !== sessionUser.id) {
+  // Mandatory Ownership Invariant: Null organizer must NEVER authorize
+  if (!giveaway.organizerId) {
+    throw new ForbiddenError('Access denied: giveaway has no valid organizer assigned (ownership integrity error)');
+  }
+
+  if (giveaway.organizerId !== sessionUser.id) {
     throw new ForbiddenError('Access denied: you are not the organizer of this giveaway');
   }
 

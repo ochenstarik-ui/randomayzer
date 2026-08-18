@@ -34,6 +34,7 @@ describe('Payload Scalability & Pagination', () => {
         repostsCount: 10,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_payload_test',
     });
 
     await repo.saveParticipants(gw.id, participants);
@@ -65,6 +66,7 @@ describe('Payload Scalability & Pagination', () => {
         repostsCount: 10,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_payload_test',
     });
 
     await repo.saveParticipants(gw.id, participants);

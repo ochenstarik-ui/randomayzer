@@ -69,6 +69,7 @@ describe('DrawResult Snapshot Binding Regression Tests', () => {
         repostsCount: 10,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_snap_bind_test',
     });
 
     // 2. Create snapshot V1

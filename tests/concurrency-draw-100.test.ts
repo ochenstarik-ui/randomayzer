@@ -38,6 +38,7 @@ describe('100-Draw Concurrency Regression & Mixed Race', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 3,
       reserveWinnersCount: 1,
+      organizerId: 'usr_conc_100',
     });
 
     const snapshot = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
@@ -104,6 +105,7 @@ describe('100-Draw Concurrency Regression & Mixed Race', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 1,
       reserveWinnersCount: 0,
+      organizerId: 'usr_conc_100',
     });
 
     await repo.saveParticipants(gw.id, participants);

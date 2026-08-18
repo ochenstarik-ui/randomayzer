@@ -67,6 +67,7 @@ describe('Repository Persistence & Lifecycle Scenario', () => {
       filterRules: DEFAULT_FILTER_RULES,
       winnersCount: 1,
       reserveWinnersCount: 1,
+      organizerId: 'usr_persist_test',
     });
 
     expect(gw.status).toBe('READY');

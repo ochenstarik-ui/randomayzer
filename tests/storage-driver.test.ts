@@ -65,6 +65,7 @@ describe('Storage Driver Policy & No Silent Fallback', () => {
           repostsCount: 2,
         },
         filterRules: {} as any,
+        organizerId: 'usr_test_driver',
       })
     ).rejects.toThrow(/Can't reach database server/);
 

@@ -50,6 +50,7 @@ describe('Concurrency Snapshot Locking & Participant Isolation', () => {
         repostsCount: 1,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_conc_snap',
     });
 
     // Valid transition: READY -> SNAPSHOT_LOCKED -> DRAWN
@@ -77,6 +78,7 @@ describe('Concurrency Snapshot Locking & Participant Isolation', () => {
         repostsCount: 1,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_conc_snap',
     });
 
     await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);

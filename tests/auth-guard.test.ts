@@ -10,7 +10,7 @@ import { POST as drawPost } from '../src/app/api/giveaways/[id]/draw/route';
 import { GET as verifyGet } from '../src/app/api/giveaways/[id]/verify/route';
 import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
 
-describe('Phase 2.2.1 Giveaway Ownership & AuthZ Guard Security Suite', () => {
+describe('Phase 2.2.2 Giveaway Ownership Invariant & AuthZ Guard Security Suite', () => {
   let memoryRepo: MemoryGiveawayRepository;
   const ownerUser = { id: 'usr_organizer_1', vkUserId: '111111', firstName: 'Alice' };
   const intruderUser = { id: 'usr_intruder_2', vkUserId: '222222', firstName: 'Eve' };
@@ -213,6 +213,64 @@ describe('Phase 2.2.1 Giveaway Ownership & AuthZ Guard Security Suite', () => {
     });
     const ownerDrawRes = await drawPost(ownerDrawReq, { params: { id: created.id } });
     expect(ownerDrawRes.status).toBe(200);
+  });
+
+  it('null organizer giveaway must NEVER authorize any user (fails with 403 Forbidden)', async () => {
+    // Manually inject a corrupted/legacy giveaway with empty organizerId
+    const corruptedId = 'gw_corrupted_null_owner';
+    (memoryRepo as any).giveaways.set(corruptedId, {
+      id: corruptedId,
+      platform: 'VK',
+      sourceUrl: 'https://vk.com/wall-1_1',
+      platformOwnerId: '-1',
+      platformPostId: '1',
+      title: 'Corrupted',
+      organizerId: '', // Empty/null owner
+      status: 'READY',
+      participants: [],
+      filterRules: validPostData.filterRules,
+      winnersCount: 1,
+      reserveWinnersCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      drawnAt: null,
+      snapshots: [],
+      latestSnapshot: null,
+      drawResult: null,
+    });
+
+    // 1. Authenticated user attempts GET -> 403
+    const getReq = new NextRequest(`http://localhost:3000/api/giveaways/${corruptedId}`, {
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${ownerSessionId}` },
+    });
+    const getRes = await giveawayDetailGet(getReq, { params: { id: corruptedId } });
+    expect(getRes.status).toBe(403);
+    const getBody = await getRes.json();
+    expect(getBody.error?.message).toMatch(/no valid organizer assigned/i);
+
+    // 2. Authenticated user attempts POST participants -> 403
+    const partReq = new NextRequest(`http://localhost:3000/api/giveaways/${corruptedId}/participants`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `${SESSION_COOKIE_NAME}=${ownerSessionId}`,
+      },
+      body: JSON.stringify({ filterRules: validPostData.filterRules }),
+    });
+    const partRes = await participantsPost(partReq, { params: { id: corruptedId } });
+    expect(partRes.status).toBe(403);
+
+    // 3. Authenticated user attempts POST draw -> 403
+    const drawReq = new NextRequest(`http://localhost:3000/api/giveaways/${corruptedId}/draw`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `${SESSION_COOKIE_NAME}=${ownerSessionId}`,
+      },
+      body: JSON.stringify({ winnersCount: 1, reserveWinnersCount: 0 }),
+    });
+    const drawRes = await drawPost(drawReq, { params: { id: corruptedId } });
+    expect(drawRes.status).toBe(403);
   });
 
   it('GET /api/giveaways/[id]/verify remains public without requiring authentication', async () => {

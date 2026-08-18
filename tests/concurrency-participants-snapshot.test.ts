@@ -48,6 +48,7 @@ describe('Concurrency: Participants Update vs Snapshot Lock Race', () => {
         repostsCount: 0,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_conc_part_snap',
     });
 
     await repo.saveParticipants(gw.id, initialParticipants);
@@ -84,6 +85,7 @@ describe('Concurrency: Participants Update vs Snapshot Lock Race', () => {
         repostsCount: 0,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_conc_part_snap',
     });
 
     await repo.saveParticipants(gw.id, initialParticipants);

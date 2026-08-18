@@ -38,6 +38,7 @@ describe('Concurrency Double Draw Protection', () => {
         repostsCount: 10,
       },
       filterRules: DEFAULT_FILTER_RULES,
+      organizerId: 'usr_conc_draw',
     });
 
     const snapshot = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);

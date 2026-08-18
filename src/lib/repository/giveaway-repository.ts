@@ -19,7 +19,7 @@ export interface GiveawayWithRelations {
   winnersCount: number;
   reserveWinnersCount: number;
   seed: string | null;
-  organizerId?: string | null;
+  organizerId: string;
   createdAt: string;
   updatedAt: string;
   drawnAt: string | null;
@@ -43,7 +43,7 @@ export interface GiveawaySummary {
   status: GiveawayStatusType;
   winnersCount: number;
   reserveWinnersCount: number;
-  organizerId?: string | null;
+  organizerId: string;
   createdAt: string;
   updatedAt: string;
   drawnAt: string | null;
@@ -70,7 +70,7 @@ export interface CreateGiveawayInput {
   winnersCount?: number;
   reserveWinnersCount?: number;
   seed?: string;
-  organizerId?: string;
+  organizerId: string;
 }
 
 export interface IGiveawayRepository {

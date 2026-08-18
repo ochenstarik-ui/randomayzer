@@ -102,6 +102,7 @@ describe('Security: VK_SERVICE_TOKEN handling', () => {
         excludeBlacklistedIds: [],
         excludeDuplicateComments: true,
       },
+      organizerId: 'usr_security_test',
     });
 
     const json = JSON.stringify(gw);
