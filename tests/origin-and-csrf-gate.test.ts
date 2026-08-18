@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { validateCsrfOrigin } from '../src/lib/auth/csrf-guard';
 import { GET as vkStartGet } from '../src/app/api/auth/vk/start/route';
 import { oauthStartRateLimiter } from '../src/lib/rate-limiter';
+import { getAppBaseUrl, getVkRedirectUri } from '../src/lib/auth/app-config';
 
 describe('Phase 2.2.3 Origin, CSRF Trusted Host & Rate Limiting Gate', () => {
   const originalEnv = process.env;

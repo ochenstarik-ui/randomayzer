@@ -26,7 +26,7 @@ describe('Phase 2.3 Token Refresh & Single-Flight Concurrency Gate', () => {
 
     // Save expired credential (expired 10 seconds ago)
     const user = await userRepo.upsertUserWithTokens({
-      vkUserId: '98765432',
+      vkUserId: '12345678',
       firstName: 'Bob',
       lastName: 'Refresher',
       encryptedAccessToken,

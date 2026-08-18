@@ -22,12 +22,23 @@ export interface IUserRepository {
     encryptedRefreshToken?: string | null;
     expiresAt?: Date | null;
     scope?: string | null;
+    updatedAt: Date;
   } | null>;
+  updateCredentialConditionally(
+    userId: string,
+    update: {
+      encryptedAccessToken: string;
+      encryptedRefreshToken: string;
+      expiresAt: Date | null;
+      scope?: string | null;
+    },
+    expectedUpdatedAt: Date
+  ): Promise<boolean>;
 }
 
 export class PrismaUserRepository implements IUserRepository {
   public async upsertUserWithTokens(params: UpsertUserParams): Promise<SessionUser> {
-    const expiresAt = params.expiresIn ? new Date(Date.now() + params.expiresIn * 1000) : null;
+    const expiresAt = params.expiresIn !== undefined ? new Date(Date.now() + params.expiresIn * 1000) : null;
 
     const user = await prisma.user.upsert({
       where: { vkUserId: params.vkUserId },
@@ -114,7 +125,30 @@ export class PrismaUserRepository implements IUserRepository {
       encryptedRefreshToken: cred.encryptedRefreshToken,
       expiresAt: cred.expiresAt,
       scope: cred.scope,
+      updatedAt: cred.updatedAt,
     };
+  }
+
+  public async updateCredentialConditionally(
+    userId: string,
+    update: {
+      encryptedAccessToken: string;
+      encryptedRefreshToken: string;
+      expiresAt: Date | null;
+      scope?: string | null;
+    },
+    expectedUpdatedAt: Date
+  ): Promise<boolean> {
+    const result = await prisma.userCredential.updateMany({
+      where: { userId, updatedAt: expectedUpdatedAt },
+      data: {
+        encryptedAccessToken: update.encryptedAccessToken,
+        encryptedRefreshToken: update.encryptedRefreshToken,
+        expiresAt: update.expiresAt,
+        scope: update.scope ?? undefined,
+      },
+    });
+    return result.count > 0;
   }
 }
 
@@ -143,12 +177,13 @@ export class MemoryUserRepository implements IUserRepository {
 
     this.users.set(id, user);
 
-    const expiresAt = params.expiresIn ? new Date(Date.now() + params.expiresIn * 1000) : null;
+    const expiresAt = params.expiresIn !== undefined ? new Date(Date.now() + params.expiresIn * 1000) : null;
     this.credentials.set(id, {
       encryptedAccessToken: params.encryptedAccessToken,
       encryptedRefreshToken: params.encryptedRefreshToken,
       expiresAt,
       scope: params.scope,
+      updatedAt: new Date(),
     });
 
     return user;
@@ -166,7 +201,40 @@ export class MemoryUserRepository implements IUserRepository {
   }
 
   public async getUserCredentials(userId: string) {
-    return this.credentials.get(userId) || null;
+    const cred = this.credentials.get(userId);
+    if (!cred) return null;
+    return {
+      encryptedAccessToken: cred.encryptedAccessToken,
+      encryptedRefreshToken: cred.encryptedRefreshToken ?? null,
+      expiresAt: cred.expiresAt ?? null,
+      scope: cred.scope ?? null,
+      updatedAt: cred.updatedAt ?? new Date(0),
+    };
+  }
+
+  public async updateCredentialConditionally(
+    userId: string,
+    update: {
+      encryptedAccessToken: string;
+      encryptedRefreshToken: string;
+      expiresAt: Date | null;
+      scope?: string | null;
+    },
+    expectedUpdatedAt: Date
+  ): Promise<boolean> {
+    const existing = this.credentials.get(userId);
+    if (!existing) return false;
+    const existingUpdatedAt: Date = existing.updatedAt ?? new Date(0);
+    if (existingUpdatedAt.getTime() !== expectedUpdatedAt.getTime()) return false;
+    this.credentials.set(userId, {
+      ...existing,
+      encryptedAccessToken: update.encryptedAccessToken,
+      encryptedRefreshToken: update.encryptedRefreshToken,
+      expiresAt: update.expiresAt,
+      scope: update.scope ?? existing.scope,
+      updatedAt: new Date(),
+    });
+    return true;
   }
 
   public clear(): void {

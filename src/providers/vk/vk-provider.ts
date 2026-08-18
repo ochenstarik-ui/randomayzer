@@ -81,15 +81,32 @@ export class VkProvider implements SocialMediaProvider {
     try {
       return await this.executeFetchPost(ownerId, postId, url, activeAuth);
     } catch (err: unknown) {
-      // Controlled Fallback: If SERVICE token encountered private/restricted resource, and organizer is available
+      /**
+       * Controlled SERVICE → USER fallback policy:
+       *
+       * ALLOWED:
+       *   - VkPrivateResourceError (codes 15, 30, 203): private/restricted post or group.
+       *     Organizer's personal token may have explicit access.
+       *   - VkPermissionError (codes 7, 260) on RESOURCE-ACCESS methods only
+       *     (likes.getList, wall.getComments, wall.getById): the service token
+       *     may lack implicit access to restricted content. User token carries
+       *     the organizer's explicit VK grants.
+       *
+       * FORBIDDEN (never fall back):
+       *   - VkRateLimitError: rate limit is per-token; switching token does not help.
+       *   - VkTemporaryError: VK server-side issue; fallback would waste quota.
+       *   - VkNetworkError / VkTimeoutError: infrastructure issue; retry, don't switch.
+       *   - VkValidationError: malformed request; switching token won't fix params.
+       *
+       * PAGINATION SAFETY:
+       *   executeFetchParticipants always starts with a fresh empty participantsMap.
+       *   If SERVICE fails mid-pagination, the USER retry is a COMPLETE RESTART —
+       *   no partial SERVICE results are carried over.
+       */
       const isPrivateOrRestricted = err instanceof VkPrivateResourceError || err instanceof VkPermissionError;
       if (isPrivateOrRestricted && activeAuth.type === 'SERVICE' && options?.organizerId) {
-        try {
-          const userAuth = await this.authResolver.resolveUserFallbackContext(options.organizerId);
-          return await this.executeFetchPost(ownerId, postId, url, userAuth);
-        } catch (fallbackErr: unknown) {
-          throw fallbackErr;
-        }
+        const userAuth = await this.authResolver.resolveUserFallbackContext(options.organizerId);
+        return await this.executeFetchPost(ownerId, postId, url, userAuth);
       }
       throw err;
     }
@@ -185,6 +202,28 @@ export class VkProvider implements SocialMediaProvider {
     try {
       return await this.executeFetchParticipants(params, activeAuth);
     } catch (err: unknown) {
+      /**
+       * Controlled SERVICE → USER fallback policy:
+       *
+       * ALLOWED:
+       *   - VkPrivateResourceError (codes 15, 30, 203): private/restricted post or group.
+       *     Organizer's personal token may have explicit access.
+       *   - VkPermissionError (codes 7, 260) on RESOURCE-ACCESS methods only
+       *     (likes.getList, wall.getComments, wall.getById): the service token
+       *     may lack implicit access to restricted content. User token carries
+       *     the organizer's explicit VK grants.
+       *
+       * FORBIDDEN (never fall back):
+       *   - VkRateLimitError: rate limit is per-token; switching token does not help.
+       *   - VkTemporaryError: VK server-side issue; fallback would waste quota.
+       *   - VkNetworkError / VkTimeoutError: infrastructure issue; retry, don't switch.
+       *   - VkValidationError: malformed request; switching token won't fix params.
+       *
+       * PAGINATION SAFETY:
+       *   executeFetchParticipants always starts with a fresh empty participantsMap.
+       *   If SERVICE fails mid-pagination, the USER retry is a COMPLETE RESTART —
+       *   no partial SERVICE results are carried over.
+       */
       const isPrivateOrRestricted = err instanceof VkPrivateResourceError || err instanceof VkPermissionError;
       if (isPrivateOrRestricted && activeAuth.type === 'SERVICE' && organizerId) {
         const userAuth = await this.authResolver.resolveUserFallbackContext(organizerId);

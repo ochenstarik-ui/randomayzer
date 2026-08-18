@@ -1,9 +1,15 @@
 import { IVkOAuthClient, VkOAuthTokenResponse } from './vk-oauth-client';
-import { VkAuthError, VkValidationError } from './vk-errors';
+import { VkAuthError, VkNetworkError, VkValidationError } from './vk-errors';
 
 export class MockVkOAuthClient implements IVkOAuthClient {
   public shouldFailExchange = false;
   public shouldFailRefresh = false;
+  /** Simulates a transient network failure on refresh (not an auth error). */
+  public shouldFailRefreshWithNetwork = false;
+  /** Controls the user_id returned in token responses. Useful for identity mismatch tests. */
+  public mockUserId: number = 12345678;
+  /** When true, refresh response omits refresh_token (tests token retention). */
+  public shouldReturnNoRefreshToken = false;
 
   public buildAuthorizationUrl(params: {
     clientId: string;
@@ -45,7 +51,7 @@ export class MockVkOAuthClient implements IVkOAuthClient {
       access_token: `mock_vk_access_token_${params.code}`,
       token_type: 'Bearer',
       expires_in: 86400,
-      user_id: 12345678,
+      user_id: this.mockUserId,
       refresh_token: `mock_vk_refresh_token_${params.code}`,
       scope: 'wall,groups,offline',
     };
@@ -59,16 +65,20 @@ export class MockVkOAuthClient implements IVkOAuthClient {
     if (!params.refreshToken) {
       throw new VkValidationError('Refresh token is required');
     }
+    if (this.shouldFailRefreshWithNetwork) {
+      throw new VkNetworkError('Simulated network error during token refresh');
+    }
     if (this.shouldFailRefresh || params.refreshToken === 'invalid_refresh') {
       throw new VkAuthError('VK OAuth token refresh failed: invalid_grant');
     }
 
+    const ts = Date.now();
     return {
-      access_token: `mock_refreshed_access_token_${Date.now()}`,
+      access_token: `mock_refreshed_access_token_${ts}`,
       token_type: 'Bearer',
       expires_in: 86400,
-      user_id: 12345678,
-      refresh_token: `mock_new_refresh_token_${Date.now()}`,
+      user_id: this.mockUserId,
+      refresh_token: this.shouldReturnNoRefreshToken ? undefined : `mock_new_refresh_token_${ts}`,
       scope: 'wall,groups,offline',
     };
   }

@@ -3,12 +3,13 @@ import { NextRequest } from 'next/server';
 import { defaultOAuthTransactionStore } from '../src/lib/auth/oauth-state';
 import { AesGcmTokenVault } from '../src/lib/auth/token-vault';
 import { MemorySessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
-import { MemoryUserRepository } from '../src/lib/repository/user-repository';
+import { MemoryUserRepository, setUserRepository } from '../src/lib/repository/user-repository';
 import { GET as startGet } from '../src/app/api/auth/vk/start/route';
 import { GET as callbackGet } from '../src/app/api/auth/vk/callback/route';
 import { GET as meGet } from '../src/app/api/auth/me/route';
 import { POST as logoutPost } from '../src/app/api/auth/logout/route';
 import { MockVkOAuthClient } from '../src/integrations/vk/mock-oauth-client';
+import { setOAuthClient } from '../src/integrations/vk/vk-oauth-client';
 
 describe('Phase 2.2 VK ID OAuth 2.1 Security & Token Safety Tests', () => {
   beforeEach(() => {
@@ -85,6 +86,8 @@ describe('Phase 2.2 VK ID OAuth 2.1 Security & Token Safety Tests', () => {
     const userRepo = new MemoryUserRepository();
     const vault = new AesGcmTokenVault('test-secret-key-12345');
     const sessionStore = new MemorySessionStore();
+    setOAuthClient(mockOAuth);
+    setUserRepository(userRepo);
 
     // 1. Create start transaction
     const { state, codeVerifier } = await defaultOAuthTransactionStore.createTransaction({
