@@ -21,9 +21,9 @@ export async function POST(req: NextRequest) {
     // Fetch post with optional organizer session context for private/restricted access probe
     const post = await provider.fetchPost(validated.url, { organizerId: sessionUser?.id });
 
-    // Derive effective capabilities based on authentication context
+    // Derive effective capabilities based on the actual auth mode used to access the post
     const effectiveCapabilities = resolveEffectiveCapabilities(
-      sessionUser ? { type: 'USER', token: 'active' } : { type: 'SERVICE', token: 'active' }
+      post.resolvedAuthType ? { type: post.resolvedAuthType } : undefined
     );
 
     return NextResponse.json({

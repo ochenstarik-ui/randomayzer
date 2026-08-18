@@ -20,7 +20,7 @@ export const STATIC_VK_CAPABILITIES: ProviderCapabilities = {
 /**
  * Derives effective capabilities at runtime based on the resolved auth context and target resource.
  */
-export function resolveEffectiveCapabilities(authContext?: VkAuthContext): EffectiveCapabilities {
+export function resolveEffectiveCapabilities(authContext?: { type: 'SERVICE' | 'USER' | 'COMMUNITY' } | VkAuthContext | null): EffectiveCapabilities {
   const accessMode: VkAccessMode = !authContext || authContext.type === 'SERVICE'
     ? 'PUBLIC_SERVICE'
     : authContext.type === 'USER'

@@ -131,6 +131,7 @@ export class VkMockProvider implements SocialMediaProvider {
       commentsCount: 86,
       repostsCount: 37,
       publishedAt: new Date(Date.now() - 3600000 * 24 * 2),
+      resolvedAuthType: 'SERVICE',
     };
   }
 

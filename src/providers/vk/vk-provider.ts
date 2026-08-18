@@ -177,6 +177,7 @@ export class VkProvider implements SocialMediaProvider {
       commentsCount: post.comments?.count || 0,
       repostsCount: post.reposts?.count || 0,
       publishedAt: post.date ? new Date(post.date * 1000) : undefined,
+      resolvedAuthType: authContext.type,
     };
   }
 

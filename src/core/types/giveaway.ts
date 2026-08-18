@@ -48,4 +48,5 @@ export interface PostMetadata {
   commentsCount: number;
   repostsCount: number;
   publishedAt?: Date;
+  resolvedAuthType?: 'SERVICE' | 'USER' | 'COMMUNITY';
 }
