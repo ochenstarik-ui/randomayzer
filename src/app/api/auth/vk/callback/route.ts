@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { defaultOAuthTransactionStore } from '@/lib/auth/oauth-state';
-import { getOAuthClient } from '../start/route';
+import { getOAuthClient } from '@/integrations/vk/vk-oauth-client';
 import { defaultTokenVault } from '@/lib/auth/token-vault';
 import { defaultUserRepository } from '@/lib/repository/user-repository';
 import { defaultSessionStore, setSessionCookie } from '@/lib/auth/session';

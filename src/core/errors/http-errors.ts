@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ZodError } from 'zod';
+import { VkClientError } from '@/integrations/vk/vk-errors';
 
 export abstract class AppError extends Error {
   abstract readonly statusCode: number;
@@ -24,9 +25,24 @@ export class UnauthorizedError extends AppError {
   readonly code = 'UNAUTHORIZED';
 }
 
+export class VkReauthenticationRequiredError extends AppError {
+  readonly statusCode = 401;
+  readonly code = 'VK_REAUTHENTICATION_REQUIRED';
+}
+
 export class ForbiddenError extends AppError {
   readonly statusCode = 403;
   readonly code = 'FORBIDDEN';
+}
+
+export class VkPermissionRequiredError extends AppError {
+  readonly statusCode = 403;
+  readonly code = 'VK_PERMISSION_REQUIRED';
+}
+
+export class VkResourcePrivateError extends AppError {
+  readonly statusCode = 403;
+  readonly code = 'VK_RESOURCE_PRIVATE';
 }
 
 export class NotFoundError extends AppError {
@@ -115,6 +131,96 @@ export function handleApiError(error: unknown): NextResponse {
       },
       { status: error.statusCode }
     );
+  }
+
+  // Handle typed VK client errors safely without exposing tokens or internal structures
+  if (error instanceof VkClientError) {
+    switch (error.category) {
+      case 'AUTH':
+      case 'REAUTHENTICATION_REQUIRED':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_REAUTHENTICATION_REQUIRED',
+              message: 'VK authorization expired or required. Please reconnect your VK account.',
+            },
+          },
+          { status: 401 }
+        );
+
+      case 'PERMISSION':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_PERMISSION_REQUIRED',
+              message: 'Insufficient VK permissions to access this resource or perform this action.',
+            },
+          },
+          { status: 403 }
+        );
+
+      case 'PRIVATE_RESOURCE':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_RESOURCE_PRIVATE',
+              message: 'This VK resource or post is in a private/restricted community or profile.',
+            },
+          },
+          { status: 403 }
+        );
+
+      case 'NOT_FOUND':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_RESOURCE_NOT_FOUND',
+              message: 'VK post or resource was not found. Please check the post URL.',
+            },
+          },
+          { status: 404 }
+        );
+
+      case 'RATE_LIMIT':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_RATE_LIMIT_EXCEEDED',
+              message: 'VK API rate limit reached. Please retry in a few moments.',
+            },
+          },
+          { status: 429 }
+        );
+
+      case 'TIMEOUT':
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_GATEWAY_TIMEOUT',
+              message: 'VK API did not respond in time. Please try again.',
+            },
+          },
+          { status: 504 }
+        );
+
+      default:
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'VK_UPSTREAM_ERROR',
+              message: 'A temporary error occurred while communicating with VK API.',
+            },
+          },
+          { status: 502 }
+        );
+    }
   }
 
   // Handle SyntaxError (Malformed JSON in request body)

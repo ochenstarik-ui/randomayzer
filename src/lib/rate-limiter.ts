@@ -117,3 +117,8 @@ export const generalApiRateLimiter = new SlidingWindowRateLimiter({
   windowMs: 60_000, // 1 minute
   maxRequests: 120,
 });
+
+export const oauthStartRateLimiter = new SlidingWindowRateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 10,
+});

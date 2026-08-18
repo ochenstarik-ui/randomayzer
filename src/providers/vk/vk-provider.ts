@@ -13,47 +13,50 @@ import {
   VkWallGetCommentsResponse,
   VkIsMemberItem
 } from '@/integrations/vk/vk-types';
-import { VkNotFoundError, VkAuthError } from '@/integrations/vk/vk-errors';
+import { 
+  VkNotFoundError, 
+  VkAuthError, 
+  VkPrivateResourceError, 
+  VkPermissionError 
+} from '@/integrations/vk/vk-errors';
+import { STATIC_VK_CAPABILITIES } from './vk-capabilities';
+import { VkAuthContextResolver, defaultVkAuthContextResolver } from '@/integrations/vk/vk-auth-resolver';
+
+export interface ExtendedFetchParticipantsParams extends FetchParticipantsParams {
+  authContext?: VkAuthContext;
+  organizerId?: string;
+}
 
 export class VkProvider implements SocialMediaProvider {
   readonly platform: PlatformType = 'VK';
-  readonly capabilities: ProviderCapabilities = {
-    likes: true,
-    comments: true,
-    reposts: false,
-    repostsNote: 'Сбор репостов ограничен политикой приватности VK для закрытых профилей',
-    subscriptions: true,
-    adminDetection: false,
-    adminDetectionNote: 'Требует расширенных прав администратора группы',
-  };
+  readonly capabilities: ProviderCapabilities = STATIC_VK_CAPABILITIES;
 
   private readonly client: IVkClient;
-  private readonly authContext: VkAuthContext;
+  private readonly defaultAuthContext: VkAuthContext;
+  private readonly authResolver: VkAuthContextResolver;
 
-  constructor(serviceToken?: string, client?: IVkClient) {
-    const token = serviceToken || process.env.VK_SERVICE_TOKEN;
-    if (!token) {
-      // In tests or unconfigured environments, create a dummy context that will be validated on call
-      this.authContext = createServiceAuth('');
-    } else {
-      this.authContext = createServiceAuth(token);
-    }
+  constructor(
+    serviceToken?: string, 
+    client?: IVkClient, 
+    authResolver?: VkAuthContextResolver
+  ) {
+    const token = serviceToken !== undefined ? serviceToken : (process.env.VK_SERVICE_TOKEN || '');
+    this.defaultAuthContext = createServiceAuth(token);
     this.client = client || defaultVkClient;
+    this.authResolver = authResolver || defaultVkAuthContextResolver;
   }
 
   public parsePostUrl(url: string): { ownerId: string; postId: string } | null {
     return parseVkPostUrl(url);
   }
 
-  private ensureConfigured(): void {
-    if (!this.authContext.token) {
-      throw new VkAuthError('VK_SERVICE_TOKEN is not configured in environment variables');
-    }
-  }
-
-  async fetchPost(url: string): Promise<PostMetadata> {
-    this.ensureConfigured();
-
+  /**
+   * Fetches VK post metadata with optional organizer context and controlled fallback.
+   */
+  async fetchPost(
+    url: string, 
+    options?: { authContext?: VkAuthContext; organizerId?: string }
+  ): Promise<PostMetadata> {
     const parsed = this.parsePostUrl(url);
     if (!parsed) {
       throw new VkNotFoundError('Invalid VK post URL format');
@@ -61,6 +64,43 @@ export class VkProvider implements SocialMediaProvider {
 
     const { ownerId, postId } = parsed;
 
+    // 1. Initial attempt with resolved auth context (prefers explicit/service token by policy)
+    let activeAuth: VkAuthContext;
+    if (options?.authContext) {
+      activeAuth = options.authContext;
+    } else if (this.defaultAuthContext.token) {
+      activeAuth = this.defaultAuthContext;
+    } else {
+      activeAuth = await this.authResolver.resolveAuthContext({
+        organizerId: options?.organizerId,
+        method: 'wall.getById',
+        resource: { ownerId, postId },
+      });
+    }
+
+    try {
+      return await this.executeFetchPost(ownerId, postId, url, activeAuth);
+    } catch (err: unknown) {
+      // Controlled Fallback: If SERVICE token encountered private/restricted resource, and organizer is available
+      const isPrivateOrRestricted = err instanceof VkPrivateResourceError || err instanceof VkPermissionError;
+      if (isPrivateOrRestricted && activeAuth.type === 'SERVICE' && options?.organizerId) {
+        try {
+          const userAuth = await this.authResolver.resolveUserFallbackContext(options.organizerId);
+          return await this.executeFetchPost(ownerId, postId, url, userAuth);
+        } catch (fallbackErr: unknown) {
+          throw fallbackErr;
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async executeFetchPost(
+    ownerId: string, 
+    postId: string, 
+    url: string, 
+    authContext: VkAuthContext
+  ): Promise<PostMetadata> {
     const response = await this.client.call<{
       items: VkWallPost[];
       profiles?: VkUserProfile[];
@@ -68,7 +108,7 @@ export class VkProvider implements SocialMediaProvider {
     }>('wall.getById', {
       posts: `${ownerId}_${postId}`,
       extended: 1,
-    }, this.authContext);
+    }, authContext);
 
     if (!response.items || response.items.length === 0) {
       throw new VkNotFoundError(`Post "${ownerId}_${postId}" not found or access is restricted`);
@@ -123,9 +163,41 @@ export class VkProvider implements SocialMediaProvider {
     };
   }
 
-  async fetchParticipants(params: FetchParticipantsParams): Promise<RawParticipant[]> {
-    this.ensureConfigured();
+  /**
+   * Fetches participants for giveaway with optional explicit or resolved AuthContext.
+   */
+  async fetchParticipants(params: ExtendedFetchParticipantsParams): Promise<RawParticipant[]> {
+    const { ownerId, postId, organizerId, authContext: explicitAuth } = params;
 
+    let activeAuth: VkAuthContext;
+    if (explicitAuth) {
+      activeAuth = explicitAuth;
+    } else if (this.defaultAuthContext.token) {
+      activeAuth = this.defaultAuthContext;
+    } else {
+      activeAuth = await this.authResolver.resolveAuthContext({
+        organizerId,
+        method: 'likes.getList',
+        resource: { ownerId, postId },
+      });
+    }
+
+    try {
+      return await this.executeFetchParticipants(params, activeAuth);
+    } catch (err: unknown) {
+      const isPrivateOrRestricted = err instanceof VkPrivateResourceError || err instanceof VkPermissionError;
+      if (isPrivateOrRestricted && activeAuth.type === 'SERVICE' && organizerId) {
+        const userAuth = await this.authResolver.resolveUserFallbackContext(organizerId);
+        return await this.executeFetchParticipants(params, userAuth);
+      }
+      throw err;
+    }
+  }
+
+  private async executeFetchParticipants(
+    params: ExtendedFetchParticipantsParams, 
+    authContext: VkAuthContext
+  ): Promise<RawParticipant[]> {
     const { ownerId, postId } = params;
     const participantsMap = new Map<string, RawParticipant>();
 
@@ -142,7 +214,7 @@ export class VkProvider implements SocialMediaProvider {
             extended: 1,
             count,
             offset,
-          }, this.authContext);
+          }, authContext);
 
           return {
             items: (res.items || []) as VkUserProfile[],
@@ -186,7 +258,7 @@ export class VkProvider implements SocialMediaProvider {
             count,
             offset,
             fields: 'photo_100,photo_200,screen_name',
-          }, this.authContext);
+          }, authContext);
 
           const profileMap = new Map<number, VkUserProfile>(
             (res.profiles || []).map(p => [p.id, p])
@@ -235,11 +307,26 @@ export class VkProvider implements SocialMediaProvider {
     return Array.from(participantsMap.values());
   }
 
-  async checkSubscription(userIds: string[], groupId: string): Promise<Map<string, boolean>> {
-    this.ensureConfigured();
-
+  async checkSubscription(
+    userIds: string[], 
+    groupId: string, 
+    options?: { authContext?: VkAuthContext; organizerId?: string }
+  ): Promise<Map<string, boolean>> {
     const cleanGroupId = groupId.replace(/^-/, '');
     const resultMap = new Map<string, boolean>();
+
+    let activeAuth: VkAuthContext;
+    if (options?.authContext) {
+      activeAuth = options.authContext;
+    } else if (this.defaultAuthContext.token) {
+      activeAuth = this.defaultAuthContext;
+    } else {
+      activeAuth = await this.authResolver.resolveAuthContext({
+        organizerId: options?.organizerId,
+        method: 'groups.isMember',
+        resource: { ownerId: `-${cleanGroupId}` },
+      });
+    }
 
     // VK API groups.isMember allows up to 500 user_ids per batch call
     const chunkSize = 500;
@@ -251,7 +338,7 @@ export class VkProvider implements SocialMediaProvider {
           group_id: cleanGroupId,
           user_ids: chunk.join(','),
         },
-        this.authContext
+        activeAuth
       );
 
       for (const item of res || []) {

@@ -19,6 +19,7 @@ export interface FetchParticipantsParams {
   includeLikes?: boolean;
   includeComments?: boolean;
   includeReposts?: boolean;
+  organizerId?: string;
   onProgress?: (loaded: number, total: number, message: string) => void;
 }
 
@@ -34,7 +35,7 @@ export interface SocialMediaProvider {
   /**
    * Fetch post metadata, text, counters, and image
    */
-  fetchPost(url: string): Promise<PostMetadata>;
+  fetchPost(url: string, options?: { organizerId?: string }): Promise<PostMetadata>;
 
   /**
    * Fetch all raw participants performing actions on the post
@@ -44,5 +45,5 @@ export interface SocialMediaProvider {
   /**
    * Batch check membership in a community/channel
    */
-  checkSubscription(userIds: string[], groupId: string): Promise<Map<string, boolean>>;
+  checkSubscription(userIds: string[], groupId: string, options?: { organizerId?: string }): Promise<Map<string, boolean>>;
 }

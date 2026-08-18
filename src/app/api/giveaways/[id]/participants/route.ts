@@ -50,7 +50,7 @@ export async function POST(
     expensiveApiRateLimiter.assertAllowed(`participants-import:${clientIp}:${id}`);
 
     // Enforce giveaway ownership authorization for importing participants
-    const { giveaway } = await requireGiveawayOwner(req, id);
+    const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);
 
     const rawBody = await req.json();
     const validated = fetchParticipantsSchema.parse(rawBody);
@@ -77,6 +77,7 @@ export async function POST(
       postId: giveaway.platformPostId,
       includeLikes: validated.filterRules.requireLike,
       includeComments: validated.filterRules.requireComment,
+      organizerId: sessionUser.id,
     });
 
     // Run participant fetch, enrichment, and filtering pipeline
@@ -86,6 +87,7 @@ export async function POST(
         rules: validated.filterRules,
         provider,
         ownerId: giveaway.platformOwnerId,
+        organizerId: sessionUser.id,
       });
 
     // Save atomic participant state in store

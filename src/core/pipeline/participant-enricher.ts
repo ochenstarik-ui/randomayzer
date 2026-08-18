@@ -8,6 +8,7 @@ export interface EnrichmentPipelineParams {
   rules: FilterRules;
   provider: SocialMediaProvider;
   ownerId: string;
+  organizerId?: string;
 }
 
 /**
@@ -20,7 +21,7 @@ export interface EnrichmentPipelineParams {
 export async function executeParticipantPipeline(
   params: EnrichmentPipelineParams
 ): Promise<FilterResult> {
-  const { rawParticipants, rules, provider, ownerId } = params;
+  const { rawParticipants, rules, provider, ownerId, organizerId } = params;
 
   let enrichedParticipants = rawParticipants.map(p => ({ ...p }));
 
@@ -30,7 +31,10 @@ export async function executeParticipantPipeline(
     const targetGroupId = rules.targetGroupId || (ownerId.startsWith('-') ? ownerId : undefined);
 
     if (targetGroupId && userIds.length > 0 && provider.capabilities.subscriptions) {
-      const subMap = await provider.checkSubscription(userIds, targetGroupId);
+      const subMap = organizerId
+        ? await provider.checkSubscription(userIds, targetGroupId, { organizerId })
+        : await provider.checkSubscription(userIds, targetGroupId);
+
       for (const p of enrichedParticipants) {
         p.subscribed = Boolean(subMap.get(p.platformUserId));
       }

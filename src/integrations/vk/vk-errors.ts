@@ -30,6 +30,14 @@ export class VkAuthError extends VkClientError {
 }
 
 /**
+ * VK Reauthentication Required Error: Stored organizer credentials expired, revoked, or refresh failed.
+ */
+export class VkReauthenticationRequiredError extends VkClientError {
+  readonly isRetryable = false;
+  readonly category = 'REAUTHENTICATION_REQUIRED';
+}
+
+/**
  * VK Permission Error: Insufficient permissions for method or scope (VK error codes: 7, 15, 260, HTTP 403)
  */
 export class VkPermissionError extends VkClientError {

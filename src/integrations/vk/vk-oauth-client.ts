@@ -264,4 +264,15 @@ export class VkOAuthClient implements IVkOAuthClient {
   }
 }
 
-export const defaultVkOAuthClient: IVkOAuthClient = new VkOAuthClient();
+export let defaultVkOAuthClient: IVkOAuthClient = new VkOAuthClient();
+
+export function setOAuthClient(client: IVkOAuthClient): void {
+  defaultVkOAuthClient = client;
+}
+
+export function getOAuthClient(): IVkOAuthClient {
+  if (process.env.USE_VK_MOCK === 'true' || (process.env.NODE_ENV === 'test' && !process.env.VK_APP_ID)) {
+    return defaultVkOAuthClient;
+  }
+  return defaultVkOAuthClient;
+}
