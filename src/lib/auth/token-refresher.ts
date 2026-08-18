@@ -31,13 +31,15 @@ import { VkReauthenticationRequiredError, VkAuthError } from '@/integrations/vk/
  * - VK token refresh responses include user_id. We verify it matches the stored User.vkUserId.
  * - Mismatch → VkReauthenticationRequiredError. Tokens are NOT persisted.
  */
+export type UserCredentialStatus = 'AVAILABLE' | 'REFRESHABLE' | 'REAUTH_REQUIRED' | 'MISSING';
+
 export class TokenRefresher {
   private inFlightRefreshes = new Map<string, Promise<string>>();
 
   constructor(
-    private userRepo: IUserRepository = defaultUserRepository,
-    private tokenVault: ITokenVault = defaultTokenVault,
-    private oauthClient: IVkOAuthClient = defaultVkOAuthClient
+    private userRepo?: IUserRepository,
+    private tokenVault?: ITokenVault,
+    private oauthClient?: IVkOAuthClient
   ) {}
 
   public setDependencies(deps: {
@@ -50,12 +52,53 @@ export class TokenRefresher {
     if (deps.oauthClient) this.oauthClient = deps.oauthClient;
   }
 
+  private getUserRepo(): IUserRepository {
+    return this.userRepo || defaultUserRepository;
+  }
+
+  private getTokenVault(): ITokenVault {
+    return this.tokenVault || defaultTokenVault;
+  }
+
+  private getOAuthClient(): IVkOAuthClient {
+    return this.oauthClient || defaultVkOAuthClient;
+  }
+
+  /**
+   * Fast, server-side status check of user credentials without performing network calls
+   * or decrypting secrets.
+   */
+  public async getCredentialStatus(userId: string): Promise<UserCredentialStatus> {
+    try {
+      const cred = await this.getUserRepo().getUserCredentials(userId);
+      if (!cred || !cred.encryptedAccessToken) {
+        return 'MISSING';
+      }
+
+      const now = Date.now();
+      const hasRefreshToken = Boolean(cred.encryptedRefreshToken);
+
+      if (cred.expiresAt === null || cred.expiresAt === undefined) {
+        return hasRefreshToken ? 'REFRESHABLE' : 'REAUTH_REQUIRED';
+      }
+
+      const isExpiredOrExpiring = now >= cred.expiresAt.getTime() - 30_000;
+      if (!isExpiredOrExpiring) {
+        return 'AVAILABLE';
+      }
+
+      return hasRefreshToken ? 'REFRESHABLE' : 'REAUTH_REQUIRED';
+    } catch {
+      return 'REAUTH_REQUIRED';
+    }
+  }
+
   /**
    * Returns a valid plaintext VK access token for the given userId.
    * Refreshes if expired or if expiry is unknown. Uses single-flight mutex.
    */
   public async getOrRefreshUserToken(userId: string): Promise<string> {
-    const cred = await this.userRepo.getUserCredentials(userId);
+    const cred = await this.getUserRepo().getUserCredentials(userId);
 
     if (!cred || !cred.encryptedAccessToken) {
       throw new VkReauthenticationRequiredError(
@@ -85,7 +128,7 @@ export class TokenRefresher {
     }
 
     if (!isExpiredOrExpiring) {
-      return await this.tokenVault.decrypt(cred.encryptedAccessToken);
+      return await this.getTokenVault().decrypt(cred.encryptedAccessToken);
     }
 
     // Token is expired or expiry is unknown. Check if refresh token is available.
@@ -125,11 +168,11 @@ export class TokenRefresher {
     credentialUpdatedAt: Date
   ): Promise<string> {
     try {
-      const refreshToken = await this.tokenVault.decrypt(encryptedRefreshToken);
+      const refreshToken = await this.getTokenVault().decrypt(encryptedRefreshToken);
       const clientId = process.env.VK_APP_ID || (process.env.NODE_ENV === 'test' ? 'test_vk_app_id' : '');
       const clientSecret = process.env.VK_CLIENT_SECRET;
 
-      const refreshResponse = await this.oauthClient.refreshToken({
+      const refreshResponse = await this.getOAuthClient().refreshToken({
         refreshToken,
         clientId,
         clientSecret,
@@ -143,7 +186,7 @@ export class TokenRefresher {
 
       // --- IDENTITY BINDING ---
       // Verify the refreshed token belongs to the same VK user.
-      const user = await this.userRepo.getUserById(userId);
+      const user = await this.getUserRepo().getUserById(userId);
       if (!user) {
         throw new VkReauthenticationRequiredError(
           'User account not found during token refresh'
@@ -162,11 +205,11 @@ export class TokenRefresher {
       // VK ID may issue a new refresh_token. If it does, rotate it.
       // If the response omits refresh_token, retain the previous encrypted token.
       // IMPORTANT: only store defined non-null values.
-      const encryptedAccessToken = await this.tokenVault.encrypt(refreshResponse.access_token);
+      const encryptedAccessToken = await this.getTokenVault().encrypt(refreshResponse.access_token);
       let newEncryptedRefreshToken: string;
       if (refreshResponse.refresh_token) {
         // New (or same) refresh token returned — encrypt and store
-        newEncryptedRefreshToken = await this.tokenVault.encrypt(refreshResponse.refresh_token);
+        newEncryptedRefreshToken = await this.getTokenVault().encrypt(refreshResponse.refresh_token);
       } else {
         // No refresh token in response — retain the previous encrypted token
         newEncryptedRefreshToken = encryptedRefreshToken;
@@ -181,7 +224,7 @@ export class TokenRefresher {
       // since we read it (i.e., no re-login or concurrent refresh has won the race).
       // On CAS miss, we still return the freshly-computed access token — it's valid —
       // but we do NOT overwrite the newer credential in the DB.
-      const written = await this.userRepo.updateCredentialConditionally(
+      const written = await this.getUserRepo().updateCredentialConditionally(
         userId,
         {
           encryptedAccessToken,
@@ -222,4 +265,8 @@ export class TokenRefresher {
   }
 }
 
-export const defaultTokenRefresher = new TokenRefresher();
+export let defaultTokenRefresher: TokenRefresher = new TokenRefresher();
+
+export function setTokenRefresher(refresher: TokenRefresher): void {
+  defaultTokenRefresher = refresher;
+}

@@ -327,6 +327,7 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     expect(resAlice.status).toBe(200);
     expect(jsonAlice.effectiveCapabilities.accessMode).toBe('ORGANIZER_USER');
+    expect(jsonAlice.effectiveCapabilities.credentialStatus).toBe('AVAILABLE');
 
     // 6b. Create giveaway for Charlie (no credentials)
     const gwCharlie = await GiveawayStore.create({
@@ -359,5 +360,240 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     expect(resCharlie.status).toBe(200);
     expect(jsonCharlie.effectiveCapabilities.accessMode).toBe('PUBLIC_SERVICE');
+    expect(jsonCharlie.effectiveCapabilities.credentialStatus).toBe('MISSING');
+  });
+
+  // ─── Test 7: Expired credential + refresh token available → ORGANIZER_USER (REFRESHABLE) ─
+  it('7. expired credential + refresh token reports ORGANIZER_USER with REFRESHABLE status', async () => {
+    const encryptedAccessToken = await tokenVault.encrypt('old_token');
+    const encryptedRefreshToken = await tokenVault.encrypt('valid_refresh_token');
+
+    const expiredUser = await userRepo.upsertUserWithTokens({
+      vkUserId: '55556666',
+      firstName: 'David',
+      lastName: 'Refreshable',
+      encryptedAccessToken,
+      encryptedRefreshToken,
+      expiresIn: -60, // expired 1 minute ago
+    });
+
+    const sessionId = await defaultSessionStore.createSession(expiredUser);
+    const cookie = `${SESSION_COOKIE_NAME}=${sessionId}`;
+
+    const gw = await GiveawayStore.create({
+      sourceUrl: 'https://vk.com/wall-555_555',
+      platform: 'VK',
+      platformOwnerId: '-555',
+      platformPostId: '555',
+      title: 'David Giveaway',
+      organizerId: expiredUser.id,
+      post: {
+        platform: 'VK',
+        ownerId: '-555',
+        postId: '555',
+        sourceUrl: 'https://vk.com/wall-555_555',
+        title: 'David Giveaway',
+        text: 'Text',
+        likesCount: 5,
+        commentsCount: 1,
+        repostsCount: 0,
+      },
+    });
+
+    const req = new NextRequest(`http://localhost:3000/api/giveaways/${gw.id}`, {
+      method: 'GET',
+      headers: { 'Cookie': cookie },
+    });
+
+    const res = await giveawayDetailGet(req, { params: { id: gw.id } });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.effectiveCapabilities.accessMode).toBe('ORGANIZER_USER');
+    expect(json.effectiveCapabilities.credentialStatus).toBe('REFRESHABLE');
+  });
+
+  // ─── Test 8: Expired credential WITHOUT refresh token → PUBLIC_SERVICE (REAUTH_REQUIRED) ─
+  it('8. expired credential without refresh token reports PUBLIC_SERVICE with REAUTH_REQUIRED status', async () => {
+    const encryptedAccessToken = await tokenVault.encrypt('old_token_no_refresh');
+
+    const expiredNoRefreshUser = await userRepo.upsertUserWithTokens({
+      vkUserId: '77779999',
+      firstName: 'Eve',
+      lastName: 'NoRefresh',
+      encryptedAccessToken,
+      expiresIn: -60, // expired 1 minute ago
+    });
+
+    const sessionId = await defaultSessionStore.createSession(expiredNoRefreshUser);
+    const cookie = `${SESSION_COOKIE_NAME}=${sessionId}`;
+
+    const gw = await GiveawayStore.create({
+      sourceUrl: 'https://vk.com/wall-777_777',
+      platform: 'VK',
+      platformOwnerId: '-777',
+      platformPostId: '777',
+      title: 'Eve Giveaway',
+      organizerId: expiredNoRefreshUser.id,
+      post: {
+        platform: 'VK',
+        ownerId: '-777',
+        postId: '777',
+        sourceUrl: 'https://vk.com/wall-777_777',
+        title: 'Eve Giveaway',
+        text: 'Text',
+        likesCount: 5,
+        commentsCount: 1,
+        repostsCount: 0,
+      },
+    });
+
+    const req = new NextRequest(`http://localhost:3000/api/giveaways/${gw.id}`, {
+      method: 'GET',
+      headers: { 'Cookie': cookie },
+    });
+
+    const res = await giveawayDetailGet(req, { params: { id: gw.id } });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    // Must NOT claim ORGANIZER_USER
+    expect(json.effectiveCapabilities.accessMode).toBe('PUBLIC_SERVICE');
+    expect(json.effectiveCapabilities.credentialStatus).toBe('REAUTH_REQUIRED');
+  });
+
+  // ─── Test 9: Null expiresAt WITHOUT refresh token → PUBLIC_SERVICE (REAUTH_REQUIRED) ─
+  it('9. null expiresAt without refresh token reports PUBLIC_SERVICE with REAUTH_REQUIRED status', async () => {
+    const encryptedAccessToken = await tokenVault.encrypt('legacy_token');
+
+    const legacyUser = await userRepo.upsertUserWithTokens({
+      vkUserId: '88880000',
+      firstName: 'Frank',
+      lastName: 'LegacyNoExpiry',
+      encryptedAccessToken,
+      // expiresIn: undefined -> expiresAt: null
+    });
+
+    const sessionId = await defaultSessionStore.createSession(legacyUser);
+    const cookie = `${SESSION_COOKIE_NAME}=${sessionId}`;
+
+    const gw = await GiveawayStore.create({
+      sourceUrl: 'https://vk.com/wall-888_888',
+      platform: 'VK',
+      platformOwnerId: '-888',
+      platformPostId: '888',
+      title: 'Frank Giveaway',
+      organizerId: legacyUser.id,
+      post: {
+        platform: 'VK',
+        ownerId: '-888',
+        postId: '888',
+        sourceUrl: 'https://vk.com/wall-888_888',
+        title: 'Frank Giveaway',
+        text: 'Text',
+        likesCount: 5,
+        commentsCount: 1,
+        repostsCount: 0,
+      },
+    });
+
+    const req = new NextRequest(`http://localhost:3000/api/giveaways/${gw.id}`, {
+      method: 'GET',
+      headers: { 'Cookie': cookie },
+    });
+
+    const res = await giveawayDetailGet(req, { params: { id: gw.id } });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.effectiveCapabilities.accessMode).toBe('PUBLIC_SERVICE');
+    expect(json.effectiveCapabilities.credentialStatus).toBe('REAUTH_REQUIRED');
+  });
+
+  // ─── Test 10: Null expiresAt WITH refresh token → ORGANIZER_USER (REFRESHABLE) ─
+  it('10. null expiresAt with refresh token reports ORGANIZER_USER with REFRESHABLE status', async () => {
+    const encryptedAccessToken = await tokenVault.encrypt('legacy_token');
+    const encryptedRefreshToken = await tokenVault.encrypt('valid_refresh_token');
+
+    const legacyRefreshUser = await userRepo.upsertUserWithTokens({
+      vkUserId: '99991111',
+      firstName: 'Grace',
+      lastName: 'LegacyRefreshable',
+      encryptedAccessToken,
+      encryptedRefreshToken,
+      // expiresIn: undefined -> expiresAt: null
+    });
+
+    const sessionId = await defaultSessionStore.createSession(legacyRefreshUser);
+    const cookie = `${SESSION_COOKIE_NAME}=${sessionId}`;
+
+    const gw = await GiveawayStore.create({
+      sourceUrl: 'https://vk.com/wall-999_999',
+      platform: 'VK',
+      platformOwnerId: '-999',
+      platformPostId: '999',
+      title: 'Grace Giveaway',
+      organizerId: legacyRefreshUser.id,
+      post: {
+        platform: 'VK',
+        ownerId: '-999',
+        postId: '999',
+        sourceUrl: 'https://vk.com/wall-999_999',
+        title: 'Grace Giveaway',
+        text: 'Text',
+        likesCount: 5,
+        commentsCount: 1,
+        repostsCount: 0,
+      },
+    });
+
+    const req = new NextRequest(`http://localhost:3000/api/giveaways/${gw.id}`, {
+      method: 'GET',
+      headers: { 'Cookie': cookie },
+    });
+
+    const res = await giveawayDetailGet(req, { params: { id: gw.id } });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.effectiveCapabilities.accessMode).toBe('ORGANIZER_USER');
+    expect(json.effectiveCapabilities.credentialStatus).toBe('REFRESHABLE');
+  });
+
+  // ─── Test 11: Giveaway detail does not leak tokens or secret fields ──────────
+  it('11. giveaway detail response never leaks token or secret fields', async () => {
+    const gwAlice = await GiveawayStore.create({
+      sourceUrl: 'https://vk.com/wall-101_101',
+      platform: 'VK',
+      platformOwnerId: '-101',
+      platformPostId: '101',
+      title: 'Alice Giveaway',
+      organizerId: loggedInUser.id,
+      post: {
+        platform: 'VK',
+        ownerId: '-101',
+        postId: '101',
+        sourceUrl: 'https://vk.com/wall-101_101',
+        title: 'Alice Giveaway',
+        text: 'Text',
+        likesCount: 10,
+        commentsCount: 2,
+        repostsCount: 0,
+      },
+    });
+
+    const reqAlice = new NextRequest(`http://localhost:3000/api/giveaways/${gwAlice.id}`, {
+      method: 'GET',
+      headers: { 'Cookie': sessionCookie },
+    });
+
+    const resAlice = await giveawayDetailGet(reqAlice, { params: { id: gwAlice.id } });
+    const rawText = await resAlice.text();
+
+    expect(rawText).not.toContain(userTokenPlain);
+    expect(rawText).not.toContain(serviceTokenPlain);
+    expect(rawText).not.toContain('encryptedAccessToken');
+    expect(rawText).not.toContain('encryptedRefreshToken');
+    expect(rawText).not.toContain('tokenVault');
   });
 });

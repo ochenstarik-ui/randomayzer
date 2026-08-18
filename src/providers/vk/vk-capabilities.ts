@@ -1,10 +1,12 @@
 import { ProviderCapabilities } from '../types';
 import { VkAuthContext } from '@/integrations/vk/vk-types';
 
+export type UserCredentialStatus = 'AVAILABLE' | 'REFRESHABLE' | 'REAUTH_REQUIRED' | 'MISSING';
 export type VkAccessMode = 'PUBLIC_SERVICE' | 'ORGANIZER_USER' | 'COMMUNITY_GROUP';
 
 export interface EffectiveCapabilities extends ProviderCapabilities {
   accessMode: VkAccessMode;
+  credentialStatus?: UserCredentialStatus;
 }
 
 export const STATIC_VK_CAPABILITIES: ProviderCapabilities = {
@@ -20,7 +22,9 @@ export const STATIC_VK_CAPABILITIES: ProviderCapabilities = {
 /**
  * Derives effective capabilities at runtime based on the resolved auth context and target resource.
  */
-export function resolveEffectiveCapabilities(authContext?: { type: 'SERVICE' | 'USER' | 'COMMUNITY' } | VkAuthContext | null): EffectiveCapabilities {
+export function resolveEffectiveCapabilities(
+  authContext?: { type: 'SERVICE' | 'USER' | 'COMMUNITY'; credentialStatus?: UserCredentialStatus } | VkAuthContext | null
+): EffectiveCapabilities {
   const accessMode: VkAccessMode = !authContext || authContext.type === 'SERVICE'
     ? 'PUBLIC_SERVICE'
     : authContext.type === 'USER'
@@ -28,6 +32,7 @@ export function resolveEffectiveCapabilities(authContext?: { type: 'SERVICE' | '
       : 'COMMUNITY_GROUP';
 
   const isCommunityAdmin = authContext?.type === 'COMMUNITY';
+  const credentialStatus = authContext && 'credentialStatus' in authContext ? authContext.credentialStatus : undefined;
 
   return {
     ...STATIC_VK_CAPABILITIES,
@@ -36,5 +41,6 @@ export function resolveEffectiveCapabilities(authContext?: { type: 'SERVICE' | '
       ? undefined
       : 'Требует прямого подключения токена сообщества с правами администратора',
     accessMode,
+    ...(credentialStatus ? { credentialStatus } : {}),
   };
 }
