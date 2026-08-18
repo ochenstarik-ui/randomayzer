@@ -146,8 +146,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     return raw ? this.mapPrismaGiveaway(raw) : null;
   }
 
-  async listGiveaways(): Promise<GiveawayWithRelations[]> {
+  async listGiveaways(organizerId?: string): Promise<GiveawayWithRelations[]> {
     const list = await prisma.giveaway.findMany({
+      where: organizerId ? { organizerId } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
         participants: true,
@@ -163,8 +164,9 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     return list.map(item => this.mapPrismaGiveaway(item));
   }
 
-  async listGiveawaysSummary(): Promise<GiveawaySummary[]> {
+  async listGiveawaysSummary(organizerId?: string): Promise<GiveawaySummary[]> {
     const list = await prisma.giveaway.findMany({
+      where: organizerId ? { organizerId } : undefined,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

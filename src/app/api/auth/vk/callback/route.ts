@@ -6,6 +6,7 @@ import { defaultUserRepository } from '@/lib/repository/user-repository';
 import { defaultSessionStore, setSessionCookie } from '@/lib/auth/session';
 import { handleApiError, ValidationError } from '@/core/errors/http-errors';
 import { validateSafeRedirectTarget } from '@/lib/auth/safe-redirect';
+import { getAppBaseUrl, getVkRedirectUri } from '@/lib/auth/app-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,23 +18,19 @@ export async function GET(req: NextRequest) {
     const errorParam = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
 
-    const origin = req.nextUrl.origin || 'http://localhost:3000';
+    const appBaseUrl = getAppBaseUrl();
 
     // 1. Handle user cancellation or VK authorization rejection
     if (errorParam) {
       // Invalidate state transaction if present so it cannot be reused
       if (state) {
-        try {
-          await defaultOAuthTransactionStore.consumeTransaction(state);
-        } catch {
-          // Ignore consumption error on cancellation path
-        }
+        await defaultOAuthTransactionStore.invalidateTransaction(state);
       }
 
       const safeErrorMsg = encodeURIComponent(
         (errorDescription || errorParam).replace(/[^\w\sа-яА-ЯёЁ.,-]/gi, '').slice(0, 100)
       );
-      return NextResponse.redirect(`${origin}/?auth_error=${safeErrorMsg}`);
+      return NextResponse.redirect(`${appBaseUrl}/?auth_error=${safeErrorMsg}`);
     }
 
     if (!code) {
@@ -54,7 +51,7 @@ export async function GET(req: NextRequest) {
     }
 
     const clientSecret = process.env.VK_CLIENT_SECRET;
-    const redirectUri = process.env.VK_REDIRECT_URI || `${origin}/api/auth/vk/callback`;
+    const redirectUri = getVkRedirectUri();
 
     // 3. Exchange code for access token via dedicated VkOAuthClient
     const oauthClient = getOAuthClient();
@@ -95,7 +92,7 @@ export async function GET(req: NextRequest) {
     // 7. Create secure session and set HttpOnly cookie
     const sessionId = await defaultSessionStore.createSession(sessionUser);
 
-    const response = NextResponse.redirect(`${origin}${safeRedirect}`);
+    const response = NextResponse.redirect(`${appBaseUrl}${safeRedirect}`);
     setSessionCookie(response, sessionId);
 
     return response;

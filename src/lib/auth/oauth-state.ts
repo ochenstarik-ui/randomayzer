@@ -7,7 +7,6 @@ export interface OAuthTransaction {
   redirectTarget: string;
   createdAt: number;
   expiresAt: number;
-  used: boolean;
 }
 
 export interface IOAuthTransactionStore {
@@ -16,6 +15,7 @@ export interface IOAuthTransactionStore {
     ttlMs?: number;
   }): Promise<{ state: string; codeVerifier: string; codeChallenge: string }>;
   consumeTransaction(state: string): Promise<{ codeVerifier: string; redirectTarget: string }>;
+  invalidateTransaction(state: string): Promise<boolean>;
   clear(): void;
   size(): number;
   cleanupExpired(): number;
@@ -49,6 +49,11 @@ export class MemoryOAuthTransactionStore implements IOAuthTransactionStore {
   private opCounter = 0;
 
   constructor(options?: { defaultTtlMs?: number; maxTransactions?: number }) {
+    if (process.env.MULTI_INSTANCE === 'true') {
+      throw new Error(
+        'FATAL CONFIGURATION ERROR: MemoryOAuthTransactionStore cannot be used when MULTI_INSTANCE=true. Configure a distributed store adapter (Redis/DB).'
+      );
+    }
     this.defaultTtlMs = options?.defaultTtlMs ?? 10 * 60 * 1000; // 10 minutes
     this.maxTransactions = options?.maxTransactions ?? 10000;
   }
@@ -75,12 +80,15 @@ export class MemoryOAuthTransactionStore implements IOAuthTransactionStore {
       redirectTarget: options?.redirectTarget || '/',
       createdAt: now,
       expiresAt: now + ttl,
-      used: false,
     });
 
     return { state, codeVerifier, codeChallenge };
   }
 
+  /**
+   * Atomically retrieves and removes the OAuth transaction in a single operation.
+   * Guarantees exact-once consumption per state string.
+   */
   public async consumeTransaction(state: string): Promise<{ codeVerifier: string; redirectTarget: string }> {
     if (!state || typeof state !== 'string') {
       throw new ValidationError('OAuth state parameter is missing or invalid');
@@ -92,12 +100,8 @@ export class MemoryOAuthTransactionStore implements IOAuthTransactionStore {
       throw new UnauthorizedError('OAuth state not found or was already consumed (single-use constraint)');
     }
 
-    // Immediately remove from store to guarantee strict single-use semantics
+    // Atomic removal from process memory
     this.store.delete(state);
-
-    if (tx.used) {
-      throw new UnauthorizedError('OAuth state was previously used');
-    }
 
     if (Date.now() > tx.expiresAt) {
       throw new UnauthorizedError('OAuth state has expired');
@@ -109,11 +113,19 @@ export class MemoryOAuthTransactionStore implements IOAuthTransactionStore {
     };
   }
 
+  /**
+   * Explicitly consumes/deletes a state (e.g. on user cancellation or OAuth error).
+   */
+  public async invalidateTransaction(state: string): Promise<boolean> {
+    if (!state || typeof state !== 'string') return false;
+    return this.store.delete(state);
+  }
+
   public cleanupExpired(): number {
     const now = Date.now();
     let count = 0;
     for (const [k, v] of this.store.entries()) {
-      if (now > v.expiresAt || v.used) {
+      if (now > v.expiresAt) {
         this.store.delete(k);
         count++;
       }

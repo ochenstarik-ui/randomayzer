@@ -82,13 +82,16 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     };
   }
 
-  async listGiveaways(): Promise<GiveawayWithRelations[]> {
-    const all = Array.from(this.giveaways.values());
+  async listGiveaways(organizerId?: string): Promise<GiveawayWithRelations[]> {
+    let all = Array.from(this.giveaways.values());
+    if (organizerId) {
+      all = all.filter(gw => gw.organizerId === organizerId);
+    }
     return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  async listGiveawaysSummary(): Promise<GiveawaySummary[]> {
-    const all = await this.listGiveaways();
+  async listGiveawaysSummary(organizerId?: string): Promise<GiveawaySummary[]> {
+    const all = await this.listGiveaways(organizerId);
     return all.map(gw => ({
       id: gw.id,
       platform: gw.platform,

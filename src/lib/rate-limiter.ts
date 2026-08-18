@@ -98,6 +98,10 @@ export class SlidingWindowRateLimiter {
     this.opCounter = 0;
   }
 
+  public clear(): void {
+    this.reset();
+  }
+
   public size(): number {
     return this.records.size;
   }

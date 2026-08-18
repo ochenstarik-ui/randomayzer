@@ -15,18 +15,16 @@ export async function GET(req: NextRequest) {
     const clientIp = resolveClientIp(req);
     generalApiRateLimiter.assertAllowed(`giveaways-list:${clientIp}`);
 
-    const sessionUser = await getSessionFromRequest(req);
-    const summaries = await GiveawayStore.listSummaries();
+    // 1. Mandatory authentication guard: anonymous listing returns 401 Unauthorized
+    const sessionUser = await requireAuthenticatedUser(req);
 
-    // If organizer is logged in, show their giveaways (or all if requested)
-    const filteredSummaries = sessionUser
-      ? summaries.filter(s => !s.organizerId || s.organizerId === sessionUser.id)
-      : summaries;
+    // 2. Query scoped strictly by organizerId at repository/database level
+    const summaries = await GiveawayStore.listSummaries(sessionUser.id);
 
     return NextResponse.json({
       success: true,
-      giveaways: filteredSummaries,
-      totalCount: filteredSummaries.length,
+      giveaways: summaries,
+      totalCount: summaries.length,
     });
   } catch (error: any) {
     return handleApiError(error);

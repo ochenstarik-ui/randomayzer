@@ -76,8 +76,8 @@ export interface CreateGiveawayInput {
 export interface IGiveawayRepository {
   createGiveaway(input: CreateGiveawayInput): Promise<GiveawayWithRelations>;
   getGiveawayById(id: string): Promise<GiveawayWithRelations | null>;
-  listGiveaways(): Promise<GiveawayWithRelations[]>;
-  listGiveawaysSummary(): Promise<GiveawaySummary[]>;
+  listGiveaways(organizerId?: string): Promise<GiveawayWithRelations[]>;
+  listGiveawaysSummary(organizerId?: string): Promise<GiveawaySummary[]>;
   getParticipantsPaginated(
     id: string, 
     page: number, 

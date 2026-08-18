@@ -43,12 +43,12 @@ export class GiveawayStore {
     return await activeRepository.getGiveawayById(id);
   }
 
-  static async listAll(): Promise<StoredGiveaway[]> {
-    return await activeRepository.listGiveaways();
+  static async listAll(organizerId?: string): Promise<StoredGiveaway[]> {
+    return await activeRepository.listGiveaways(organizerId);
   }
 
-  static async listSummaries(): Promise<GiveawaySummary[]> {
-    return await activeRepository.listGiveawaysSummary();
+  static async listSummaries(organizerId?: string): Promise<GiveawaySummary[]> {
+    return await activeRepository.listGiveawaysSummary(organizerId);
   }
 
   static async getParticipantsPaginated(
