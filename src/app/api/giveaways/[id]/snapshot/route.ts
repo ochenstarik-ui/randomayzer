@@ -8,6 +8,7 @@ import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
 import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
+import { computeSeedCommitment } from '@/core/randomizer/hasher';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,18 +57,22 @@ export async function POST(
       throw new ConflictError('Cannot create snapshot with 0 eligible participants. Check your filter rules.');
     }
 
-    // Atomically create and lock snapshot in database
+    // Atomically create and lock snapshot + pre-commit seed in database
     const snapshot = await GiveawayStore.createAndLockSnapshot(
       id,
       eligibleParticipants,
       validated.filterRules
     );
 
+    const updatedGw = await GiveawayStore.getById(id);
+    const seedCommitment = updatedGw?.seed ? computeSeedCommitment(updatedGw.seed) : null;
+
     const responseBody = {
       success: true,
       giveawayId: id,
       status: 'SNAPSHOT_LOCKED',
       snapshot,
+      seedCommitment,
     };
 
     if (idempotencyKey) {

@@ -12,11 +12,20 @@ describe('Zod API Validation & Capability Rules', () => {
     const valid = executeDrawSchema.parse({
       winnersCount: 5,
       reserveWinnersCount: 2,
-      seed: 'valid-custom-seed',
     });
 
     expect(valid.winnersCount).toBe(5);
     expect(valid.reserveWinnersCount).toBe(2);
+  });
+
+  it('should strictly reject seed parameter in executeDraw payload', () => {
+    expect(() =>
+      executeDrawSchema.parse({
+        winnersCount: 5,
+        reserveWinnersCount: 2,
+        seed: 'client-supplied-seed',
+      })
+    ).toThrow();
   });
 
   it('should reject winnersCount outside 1..100', () => {
@@ -28,11 +37,6 @@ describe('Zod API Validation & Capability Rules', () => {
   it('should reject reserveWinnersCount outside 0..100', () => {
     expect(() => executeDrawSchema.parse({ reserveWinnersCount: -1 })).toThrow();
     expect(() => executeDrawSchema.parse({ reserveWinnersCount: 105 })).toThrow();
-  });
-
-  it('should reject seed longer than 512 characters', () => {
-    const oversizedSeed = 'a'.repeat(513);
-    expect(() => executeDrawSchema.parse({ seed: oversizedSeed })).toThrow();
   });
 
   it('should reject URL longer than 2048 characters in createGiveaway', () => {

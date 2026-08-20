@@ -9,6 +9,7 @@ import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/
 import { FilteredParticipant } from '../../core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '../../core/types/audit';
 import { computeParticipantsSnapshotHash, computeConditionsHash } from '../../core/randomizer/canonical';
+import { generateCryptoSecureSeed, computeSeedCommitment } from '../../core/randomizer/hasher';
 import { GiveawayFSM } from '../../core/fsm/giveaway-fsm';
 import { ConflictError, NotFoundError } from '../../core/errors/http-errors';
 
@@ -41,7 +42,8 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       filterRules: input.filterRules,
       winnersCount: input.winnersCount || 1,
       reserveWinnersCount: input.reserveWinnersCount || 0,
-      seed: input.seed || null,
+      seed: null,
+      seedCommitment: null,
       organizerId: input.organizerId,
       createdAt: now,
       updatedAt: now,
@@ -74,8 +76,11 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
       };
     }
 
+    const seedCommitment = gw.seed ? computeSeedCommitment(gw.seed) : null;
+
     return {
       ...gw,
+      seedCommitment,
       snapshots: [...snaps],
       latestSnapshot: latest,
       drawResult,
@@ -215,9 +220,14 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     snaps.push(snapshot);
     this.snapshots.set(id, snaps);
 
+    // Generate and lock cryptographic seed atomically with snapshot creation
+    const seed = generateCryptoSecureSeed();
+
     gw.status = 'SNAPSHOT_LOCKED';
     gw.filterRules = rules;
     gw.latestSnapshot = snapshot;
+    gw.seed = seed;
+    gw.seedCommitment = computeSeedCommitment(seed);
     gw.updatedAt = new Date().toISOString();
 
     return snapshot;

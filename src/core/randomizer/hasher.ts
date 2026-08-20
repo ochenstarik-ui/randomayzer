@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { FilteredParticipant } from '../types/participant';
 import { 
   computeParticipantsSnapshotHash, 
@@ -20,4 +20,12 @@ export {
  */
 export function generateCryptoSecureSeed(): string {
   return randomBytes(16).toString('hex');
+}
+
+/**
+ * Computes a cryptographic commitment (SHA-256 hex digest) of a seed.
+ * Exposed before draw execution to bind the seed without revealing its plaintext.
+ */
+export function computeSeedCommitment(seed: string): string {
+  return createHash('sha256').update(seed, 'utf8').digest('hex');
 }

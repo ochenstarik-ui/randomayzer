@@ -61,7 +61,6 @@ export async function POST(req: NextRequest) {
       filterRules: validated.filterRules,
       winnersCount: validated.winnersCount,
       reserveWinnersCount: validated.reserveWinnersCount,
-      seed: validated.seed,
       organizerId: sessionUser.id,
     });
 

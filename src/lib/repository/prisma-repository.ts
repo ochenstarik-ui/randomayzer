@@ -10,6 +10,7 @@ import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/
 import { FilteredParticipant } from '../../core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '../../core/types/audit';
 import { computeParticipantsSnapshotHash, computeConditionsHash } from '../../core/randomizer/canonical';
+import { generateCryptoSecureSeed, computeSeedCommitment } from '../../core/randomizer/hasher';
 import { GiveawayFSM } from '../../core/fsm/giveaway-fsm';
 import { ConflictError, NotFoundError } from '../../core/errors/http-errors';
 
@@ -69,6 +70,8 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       };
     }
 
+    const seedCommitment = raw.seed ? computeSeedCommitment(raw.seed) : null;
+
     return {
       id: raw.id,
       platform: raw.platform as PlatformType,
@@ -86,6 +89,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       winnersCount: raw.winnersCount,
       reserveWinnersCount: raw.reserveWinnersCount,
       seed: raw.seed,
+      seedCommitment,
       organizerId: raw.organizerId,
       createdAt: raw.createdAt.toISOString(),
       updatedAt: raw.updatedAt.toISOString(),
@@ -114,7 +118,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         filterRules: input.filterRules as any,
         winnersCount: input.winnersCount || 1,
         reserveWinnersCount: input.reserveWinnersCount || 0,
-        seed: input.seed,
+        seed: null,
         organizerId: input.organizerId,
       },
       include: {
@@ -371,7 +375,10 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
 
     try {
       return await prisma.$transaction(async (tx) => {
-        // Atomic status guard
+        // Generate cryptographic seed for pre-commitment
+        const seed = generateCryptoSecureSeed();
+
+        // Atomic status and seed guard
         const updateRes = await tx.giveaway.updateMany({
           where: {
             id,
@@ -380,6 +387,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
           data: {
             status: 'SNAPSHOT_LOCKED',
             filterRules: rules as any,
+            seed: seed,
           },
         });
 

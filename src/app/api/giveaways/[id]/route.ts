@@ -5,6 +5,7 @@ import { resolveClientIp } from '@/lib/client-ip';
 import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
 import { resolveEffectiveCapabilities } from '@/providers/vk/vk-capabilities';
 import { defaultTokenRefresher } from '@/lib/auth/token-refresher';
+import { computeSeedCommitment } from '@/core/randomizer/hasher';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,9 +33,19 @@ export async function GET(
       credentialStatus,
     });
 
+    // Seed pre-commitment masking: do not expose plaintext seed before DRAWN
+    const isDrawn = giveaway.status === 'DRAWN' || giveaway.status === 'PUBLISHED';
+    const seedCommitment = giveaway.seed ? computeSeedCommitment(giveaway.seed) : (giveaway.seedCommitment || null);
+
+    const sanitizedGiveaway = {
+      ...giveaway,
+      seed: isDrawn ? giveaway.seed : null,
+      seedCommitment,
+    };
+
     return NextResponse.json({ 
       success: true, 
-      giveaway,
+      giveaway: sanitizedGiveaway,
       effectiveCapabilities,
     });
   } catch (error: any) {

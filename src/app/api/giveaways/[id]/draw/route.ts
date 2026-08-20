@@ -64,10 +64,16 @@ export async function POST(
       );
     }
 
-    // Use CSPRNG crypto.randomBytes seed if none provided (Math.random is strictly forbidden)
-    const seed = (validated.seed && validated.seed.trim()) || generateCryptoSecureSeed();
+    // 4. Strict Seed Pre-Commit Guard: Read seed strictly from locked database state
+    if (!giveaway.seed) {
+      throw new ConflictError(
+        'Cannot execute draw: no pre-committed seed is locked for this giveaway. Lock a snapshot before drawing.'
+      );
+    }
 
-    // 4. Execute Provably Fair Fisher-Yates Draw V1
+    const seed = giveaway.seed;
+
+    // 5. Execute Provably Fair Fisher-Yates Draw V1
     const drawResult = executeDeterministicDrawV1({
       giveawayId: id,
       snapshot,
@@ -78,7 +84,7 @@ export async function POST(
       filterRules: giveaway.filterRules,
     });
 
-    // 5. Save DrawResult & AuditRecord in database with atomic status transition
+    // 6. Save DrawResult & AuditRecord in database with atomic status transition
     const updatedGiveaway = await GiveawayStore.saveDrawResult(id, snapshot.id, drawResult);
 
     return NextResponse.json({

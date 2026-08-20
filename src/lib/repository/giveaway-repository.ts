@@ -19,6 +19,7 @@ export interface GiveawayWithRelations {
   winnersCount: number;
   reserveWinnersCount: number;
   seed: string | null;
+  seedCommitment?: string | null;
   organizerId: string;
   createdAt: string;
   updatedAt: string;
@@ -69,7 +70,6 @@ export interface CreateGiveawayInput {
   filterRules: FilterRules;
   winnersCount?: number;
   reserveWinnersCount?: number;
-  seed?: string;
   organizerId: string;
 }
 
