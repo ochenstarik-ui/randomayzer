@@ -41,7 +41,7 @@ describe('100-Draw Concurrency Regression & Mixed Race', () => {
       organizerId: 'usr_conc_100',
     });
 
-    const snapshot = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
+    const { snapshot } = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
 
     // Launch 100 concurrent draw requests
     const drawPromises = Array.from({ length: 100 }, async (_, index) => {

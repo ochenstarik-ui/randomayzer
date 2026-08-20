@@ -41,7 +41,7 @@ describe('Concurrency Double Draw Protection', () => {
       organizerId: 'usr_conc_draw',
     });
 
-    const snapshot = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
+    const { snapshot } = await repo.createAndLockSnapshot(gw.id, participants, DEFAULT_FILTER_RULES);
 
     // 2. Launch 20 concurrent draw attempts
     const concurrentDrawPromises = Array.from({ length: 20 }, async (_, index) => {

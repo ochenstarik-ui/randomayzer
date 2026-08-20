@@ -3,7 +3,8 @@ import {
   GiveawayWithRelations, 
   GiveawaySummary,
   PaginatedParticipantsResult,
-  CreateGiveawayInput 
+  CreateGiveawayInput,
+  LockedSnapshotResult
 } from './repository/giveaway-repository';
 import { PrismaGiveawayRepository } from './repository/prisma-repository';
 import { MemoryGiveawayRepository } from './repository/memory-repository';
@@ -68,7 +69,7 @@ export class GiveawayStore {
     id: string, 
     eligibleParticipants: FilteredParticipant[], 
     rules: FilterRules
-  ): Promise<ParticipantSnapshotData> {
+  ): Promise<LockedSnapshotResult> {
     return await activeRepository.createAndLockSnapshot(id, eligibleParticipants, rules);
   }
 

@@ -306,14 +306,16 @@ describe('Phase 2.4 — Seed Pre-Commit Gate (Seed Grinding Elimination)', () =>
     expect(gw.seed).toBeNull();
     expect(gw.seedCommitment).toBeNull();
 
-    const snapshot = await repo.createAndLockSnapshot(gw.id, testParticipants.slice(0, 10), DEFAULT_FILTER_RULES);
+    const { snapshot, seedCommitment } = await repo.createAndLockSnapshot(gw.id, testParticipants.slice(0, 10), DEFAULT_FILTER_RULES);
     expect(snapshot.id).toBeDefined();
+    expect(seedCommitment).toBeDefined();
 
     const lockedGw = await repo.getGiveawayById(gw.id);
     expect(lockedGw?.status).toBe('SNAPSHOT_LOCKED');
     expect(lockedGw?.seed).toBeDefined();
     expect(lockedGw?.seed).toHaveLength(32);
     expect(lockedGw?.seedCommitment).toBe(computeSeedCommitment(lockedGw!.seed!));
+    expect(seedCommitment).toBe(lockedGw?.seedCommitment);
   });
 
   // ─── Test 7: Repository Driver Parity (Prisma repository mapping & seed commitment) ───

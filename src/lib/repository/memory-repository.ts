@@ -3,7 +3,8 @@ import {
   CreateGiveawayInput, 
   GiveawayWithRelations,
   GiveawaySummary,
-  PaginatedParticipantsResult
+  PaginatedParticipantsResult,
+  LockedSnapshotResult
 } from './giveaway-repository';
 import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/giveaway';
 import { FilteredParticipant } from '../../core/types/participant';
@@ -186,12 +187,15 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     id: string, 
     eligibleParticipants: FilteredParticipant[], 
     rules: FilterRules
-  ): Promise<ParticipantSnapshotData> {
+  ): Promise<LockedSnapshotResult> {
     const gw = this.giveaways.get(id);
     if (!gw) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
-    if (gw.status === 'DRAWN' || gw.status === 'PUBLISHED') {
-      throw new ConflictError(`Cannot lock snapshot in final status "${gw.status}"`);
+    // Strict Single Lock Invariant: Only READY -> SNAPSHOT_LOCKED transition is permitted
+    if (gw.status !== 'READY') {
+      throw new ConflictError(
+        `Cannot lock snapshot: giveaway "${id}" is in status "${gw.status}", but requires "READY"`
+      );
     }
 
     if (eligibleParticipants.length === 0) {
@@ -222,15 +226,19 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
 
     // Generate and lock cryptographic seed atomically with snapshot creation
     const seed = generateCryptoSecureSeed();
+    const seedCommitment = computeSeedCommitment(seed);
 
     gw.status = 'SNAPSHOT_LOCKED';
     gw.filterRules = rules;
     gw.latestSnapshot = snapshot;
     gw.seed = seed;
-    gw.seedCommitment = computeSeedCommitment(seed);
+    gw.seedCommitment = seedCommitment;
     gw.updatedAt = new Date().toISOString();
 
-    return snapshot;
+    return {
+      snapshot,
+      seedCommitment,
+    };
   }
 
   async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {

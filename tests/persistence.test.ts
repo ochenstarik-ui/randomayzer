@@ -78,7 +78,7 @@ describe('Repository Persistence & Lifecycle Scenario', () => {
     expect(updatedGw.participants.length).toBe(3);
 
     // 3. Create & Lock Snapshot
-    const snapshot = await repo.createAndLockSnapshot(
+    const { snapshot, seedCommitment } = await repo.createAndLockSnapshot(
       gw.id, 
       sampleParticipants, 
       DEFAULT_FILTER_RULES
@@ -88,6 +88,7 @@ describe('Repository Persistence & Lifecycle Scenario', () => {
     expect(snapshot.participantCount).toBe(3);
     expect(snapshot.participantsSnapshotHash).toBeDefined();
     expect(snapshot.conditionsHash).toBeDefined();
+    expect(seedCommitment).toBeDefined();
 
     // Verify giveaway status transitioned to SNAPSHOT_LOCKED
     const lockedGw = await repo.getGiveawayById(gw.id);

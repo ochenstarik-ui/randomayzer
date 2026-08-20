@@ -8,7 +8,6 @@ import { expensiveApiRateLimiter } from '@/lib/rate-limiter';
 import { IdempotencyStore } from '@/lib/idempotency';
 import { resolveClientIp } from '@/lib/client-ip';
 import { requireGiveawayOwner } from '@/lib/auth/auth-guard';
-import { computeSeedCommitment } from '@/core/randomizer/hasher';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,14 +57,11 @@ export async function POST(
     }
 
     // Atomically create and lock snapshot + pre-commit seed in database
-    const snapshot = await GiveawayStore.createAndLockSnapshot(
+    const { snapshot, seedCommitment } = await GiveawayStore.createAndLockSnapshot(
       id,
       eligibleParticipants,
       validated.filterRules
     );
-
-    const updatedGw = await GiveawayStore.getById(id);
-    const seedCommitment = updatedGw?.seed ? computeSeedCommitment(updatedGw.seed) : null;
 
     const responseBody = {
       success: true,

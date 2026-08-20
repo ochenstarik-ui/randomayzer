@@ -54,7 +54,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
-    const snapshot = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
+    const { snapshot } = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
 
     const result = executeDeterministicDrawV1({
       giveawayId: gw.id,
@@ -90,7 +90,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
-    const snapshot = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
+    const { snapshot } = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
 
     const result = executeDeterministicDrawV1({
       giveawayId: gw.id,
@@ -126,7 +126,7 @@ describe('Winner Count Contract & Draw Retry Invariants', () => {
     });
 
     await GiveawayStore.updateParticipants(gw.id, threeParticipants);
-    const snapshot = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
+    const { snapshot } = await GiveawayStore.createAndLockSnapshot(gw.id, threeParticipants, DEFAULT_FILTER_RULES);
 
     expect(() =>
       executeDeterministicDrawV1({

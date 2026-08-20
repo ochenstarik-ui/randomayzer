@@ -73,13 +73,13 @@ describe('DrawResult Snapshot Binding Regression Tests', () => {
     });
 
     // 2. Create snapshot V1
-    const snapshotV1 = await repo.createAndLockSnapshot(gw.id, participantsV1, DEFAULT_FILTER_RULES);
+    const { snapshot: snapshotV1 } = await repo.createAndLockSnapshot(gw.id, participantsV1, DEFAULT_FILTER_RULES);
     expect(snapshotV1.version).toBe(1);
     const hashV1 = snapshotV1.participantsSnapshotHash;
 
     // 3. Unlock / simulate revision and create Snapshot V2
     await repo.updateStatus(gw.id, 'READY');
-    const snapshotV2 = await repo.createAndLockSnapshot(gw.id, participantsV2, {
+    const { snapshot: snapshotV2 } = await repo.createAndLockSnapshot(gw.id, participantsV2, {
       ...DEFAULT_FILTER_RULES,
       requireComment: true,
     });

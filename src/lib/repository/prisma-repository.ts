@@ -3,7 +3,8 @@ import {
   CreateGiveawayInput, 
   GiveawayWithRelations,
   GiveawaySummary,
-  PaginatedParticipantsResult
+  PaginatedParticipantsResult,
+  LockedSnapshotResult
 } from './giveaway-repository';
 import { prisma } from '../prisma';
 import { FilterRules, GiveawayStatusType, PlatformType } from '../../core/types/giveaway';
@@ -358,12 +359,15 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     id: string, 
     eligibleParticipants: FilteredParticipant[], 
     rules: FilterRules
-  ): Promise<ParticipantSnapshotData> {
+  ): Promise<LockedSnapshotResult> {
     const current = await this.getGiveawayById(id);
     if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
 
-    if (current.status === 'DRAWN' || current.status === 'PUBLISHED') {
-      throw new ConflictError(`Cannot lock snapshot in final status "${current.status}"`);
+    // Strict Single Lock Invariant: Only READY -> SNAPSHOT_LOCKED transition is permitted
+    if (current.status !== 'READY') {
+      throw new ConflictError(
+        `Cannot lock snapshot: giveaway "${id}" is in status "${current.status}", but requires "READY"`
+      );
     }
 
     if (eligibleParticipants.length === 0) {
@@ -375,14 +379,15 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
 
     try {
       return await prisma.$transaction(async (tx) => {
-        // Generate cryptographic seed for pre-commitment
+        // Generate cryptographic seed and commitment
         const seed = generateCryptoSecureSeed();
+        const seedCommitment = computeSeedCommitment(seed);
 
-        // Atomic status and seed guard
+        // Atomic status and seed guard: ONLY transition from READY
         const updateRes = await tx.giveaway.updateMany({
           where: {
             id,
-            status: { in: ['READY', 'SNAPSHOT_LOCKED'] },
+            status: 'READY',
           },
           data: {
             status: 'SNAPSHOT_LOCKED',
@@ -415,15 +420,18 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
         });
 
         return {
-          id: snapshot.id,
-          giveawayId: snapshot.giveawayId,
-          version: snapshot.version,
-          createdAt: snapshot.createdAt.toISOString(),
-          eligibleParticipants,
-          filterRulesSnapshot: rules,
-          participantCount: snapshot.participantCount,
-          participantsSnapshotHash: snapshot.participantsSnapshotHash,
-          conditionsHash: snapshot.conditionsHash,
+          snapshot: {
+            id: snapshot.id,
+            giveawayId: snapshot.giveawayId,
+            version: snapshot.version,
+            createdAt: snapshot.createdAt.toISOString(),
+            eligibleParticipants,
+            filterRulesSnapshot: rules,
+            participantCount: snapshot.participantCount,
+            participantsSnapshotHash: snapshot.participantsSnapshotHash,
+            conditionsHash: snapshot.conditionsHash,
+          },
+          seedCommitment,
         };
       });
     } catch (err: any) {

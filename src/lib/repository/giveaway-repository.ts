@@ -73,6 +73,11 @@ export interface CreateGiveawayInput {
   organizerId: string;
 }
 
+export interface LockedSnapshotResult {
+  snapshot: ParticipantSnapshotData;
+  seedCommitment: string;
+}
+
 export interface IGiveawayRepository {
   createGiveaway(input: CreateGiveawayInput): Promise<GiveawayWithRelations>;
   getGiveawayById(id: string): Promise<GiveawayWithRelations | null>;
@@ -90,7 +95,7 @@ export interface IGiveawayRepository {
     id: string, 
     eligibleParticipants: FilteredParticipant[], 
     rules: FilterRules
-  ): Promise<ParticipantSnapshotData>;
+  ): Promise<LockedSnapshotResult>;
   getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null>;
   saveDrawResultAndAudit(
     id: string, 
