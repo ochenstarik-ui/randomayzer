@@ -17,11 +17,12 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const clientIp = resolveClientIp(req);
-    expensiveApiRateLimiter.assertAllowed(`snapshot-lock:${clientIp}:${id}`);
 
-    // Enforce giveaway ownership authorization
-    const { giveaway } = await requireGiveawayOwner(req, id);
+    // 1. Enforce giveaway ownership authorization
+    const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);
+
+    // 2. User-scoped rate limiter
+    expensiveApiRateLimiter.assertAllowed(`snapshot-lock:${sessionUser.id}:${id}`);
 
     if (giveaway.status === 'DRAWN' || giveaway.status === 'PUBLISHED') {
       throw new ConflictError(`Cannot create new snapshot for giveaway in status "${giveaway.status}"`);

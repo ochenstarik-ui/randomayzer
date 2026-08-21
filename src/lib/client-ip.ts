@@ -37,6 +37,8 @@ export function normalizeIp(rawIp: string): string {
   return ip;
 }
 
+let hasWarnedMissingProxy = false;
+
 /**
  * Resolves the client identity IP address.
  * Strictly ignores untrusted X-Forwarded-For headers unless TRUST_PROXY=true is configured.
@@ -45,8 +47,20 @@ export function resolveClientIp(req: NextRequest): string {
   const isTrustProxy = process.env.TRUST_PROXY === 'true';
 
   if (!isTrustProxy) {
+    if (req.ip) {
+      return normalizeIp(req.ip);
+    }
+
+    if (process.env.NODE_ENV === 'production' && !hasWarnedMissingProxy) {
+      hasWarnedMissingProxy = true;
+      console.warn(
+        '[SECURITY CONFIGURATION WARNING] TRUST_PROXY is not set to "true" and direct req.ip is unavailable. ' +
+        'In reverse-proxy environments (Nginx, Caddy, Cloudflare, AWS ALB), configure TRUST_PROXY=true to resolve client IPs correctly.'
+      );
+    }
+
     // When proxy is not trusted, ignore spoofable headers from the client
-    return req.ip || 'direct-client';
+    return 'direct-client';
   }
 
   // Proxy is trusted: extract and validate header

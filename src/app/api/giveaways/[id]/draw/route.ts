@@ -21,11 +21,12 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const clientIp = resolveClientIp(req);
-    expensiveApiRateLimiter.assertAllowed(`draw-execute:${clientIp}:${id}`);
 
-    // Enforce giveaway ownership authorization
-    const { giveaway } = await requireGiveawayOwner(req, id);
+    // 1. Enforce giveaway ownership authorization (extracts trusted sessionUser)
+    const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);
+
+    // 2. User-scoped rate limiter: isolates organizer quota
+    expensiveApiRateLimiter.assertAllowed(`draw-execute:${sessionUser.id}:${id}`);
 
     // 1. Strict Terminal State Guard: If already DRAWN or PUBLISHED, return 409 DRAW_ALREADY_COMPLETED
     if (giveaway.status === 'DRAWN' || giveaway.status === 'PUBLISHED') {

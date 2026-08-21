@@ -31,9 +31,21 @@ The API supports the standard `Idempotency-Key` HTTP header on state-mutating en
 
 ## 2. Rate Limiting & Client Identity Resolution
 
+### Client Identity Scoping Architecture
+- **Authenticated Routes (`/api/giveaways*`)**:
+  Rate limits are keyed strictly by trusted server-side `sessionUser.id` (e.g. `draw-execute:${sessionUser.id}:${id}`, `giveaways-list:${sessionUser.id}`) **after** session authentication and ownership checks.
+  This ensures:
+  1. Different organizers have isolated rate limit buckets and never block each other, even when `req.ip` is unpopulated.
+  2. Unauthenticated attackers receive `401 Unauthorized` before reaching the rate limiter and cannot drain any organizer's quota.
+- **Anonymous / Hybrid Routes (`/api/posts/preview`, `/api/auth/vk/start`, `/api/giveaways/[id]/verify`)**:
+  - `POST /api/posts/preview`: Uses `post-preview:user:${sessionUser.id}` if a valid session exists, and `post-preview:anon:${clientIp}` if anonymous. An anonymous attacker consuming the IP limit cannot affect authenticated organizers.
+  - `GET /api/auth/vk/start`: Rate-limited per resolved client IP (`oauth-start:${clientIp}`).
+  - `GET /api/giveaways/[id]/verify`: Rate-limited per resolved client IP and giveaway (`verify-get:${clientIp}:${id}`).
+
 ### Centralized Client IP Resolution (`src/lib/client-ip.ts`)
 - **Untrusted Proxy Mode (Default)**:
-  When `TRUST_PROXY !== 'true'`, user-supplied `X-Forwarded-For`, `X-Real-IP`, or `CF-Connecting-IP` headers are **strictly ignored** to prevent IP spoofing attacks. The direct socket connection IP is used.
+  When `TRUST_PROXY !== 'true'`, user-supplied `X-Forwarded-For`, `X-Real-IP`, or `CF-Connecting-IP` headers are **strictly ignored** to prevent IP spoofing attacks. The direct socket connection `req.ip` is used.
+  - *Production Behavior*: If `NODE_ENV=production`, `TRUST_PROXY !== 'true'`, and direct `req.ip` is unavailable (e.g. in self-hosted Node.js / `next start` behind a reverse proxy), the server emits a `[SECURITY CONFIGURATION WARNING]` and falls back to `'direct-client'`. For production deployments behind reverse proxies, setting `TRUST_PROXY=true` is required.
 - **Trusted Proxy Mode (`TRUST_PROXY=true`)**:
   When deployed behind a verified reverse proxy (e.g. Nginx, Cloudflare, AWS ALB), `TRUST_PROXY=true` must be set. The resolver:
   - Enforces a maximum header length of 1024 characters (oversized headers are rejected as malformed).

@@ -15,11 +15,12 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const clientIp = resolveClientIp(req);
-    generalApiRateLimiter.assertAllowed(`giveaway-get:${clientIp}`);
 
-    // Enforce giveaway ownership authorization
+    // 1. Enforce giveaway ownership authorization
     const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);
+
+    // 2. User-scoped rate limiter
+    generalApiRateLimiter.assertAllowed(`giveaway-get:${sessionUser.id}`);
 
     // Resolve runtime effective capabilities truthfully based on stored organizer credential status
     let credentialStatus: 'AVAILABLE' | 'REFRESHABLE' | 'REAUTH_REQUIRED' | 'MISSING' = 'MISSING';

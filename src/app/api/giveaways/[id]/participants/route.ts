@@ -17,11 +17,12 @@ export async function GET(
 ) {
   try {
     const { id } = params;
-    const clientIp = resolveClientIp(req);
-    generalApiRateLimiter.assertAllowed(`participants-get:${clientIp}`);
 
-    // Enforce giveaway ownership authorization (private participant PII data)
-    await requireGiveawayOwner(req, id);
+    // 1. Enforce giveaway ownership authorization (private participant PII data)
+    const { sessionUser } = await requireGiveawayOwner(req, id);
+
+    // 2. User-scoped rate limiter
+    generalApiRateLimiter.assertAllowed(`participants-get:${sessionUser.id}`);
 
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -46,11 +47,12 @@ export async function POST(
 ) {
   try {
     const { id } = params;
-    const clientIp = resolveClientIp(req);
-    expensiveApiRateLimiter.assertAllowed(`participants-import:${clientIp}:${id}`);
 
-    // Enforce giveaway ownership authorization for importing participants
+    // 1. Enforce giveaway ownership authorization for importing participants
     const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);
+
+    // 2. User-scoped rate limiter
+    expensiveApiRateLimiter.assertAllowed(`participants-import:${sessionUser.id}:${id}`);
 
     const rawBody = await req.json();
     const validated = fetchParticipantsSchema.parse(rawBody);

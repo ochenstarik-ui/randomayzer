@@ -9,13 +9,17 @@ import { resolveEffectiveCapabilities } from '@/providers/vk/vk-capabilities';
 
 export async function POST(req: NextRequest) {
   try {
+    const sessionUser = await getSessionFromRequest(req);
     const clientIp = resolveClientIp(req);
-    generalApiRateLimiter.assertAllowed(`post-preview:${clientIp}`);
+
+    // Rate limiting: isolate authenticated user bucket from anonymous IP bucket
+    const rateLimitKey = sessionUser
+      ? `post-preview:user:${sessionUser.id}`
+      : `post-preview:anon:${clientIp}`;
+    generalApiRateLimiter.assertAllowed(rateLimitKey);
 
     const rawBody = await req.json();
     const validated = postPreviewSchema.parse(rawBody);
-
-    const sessionUser = await getSessionFromRequest(req);
     const provider = ProviderFactory.getVkProvider();
 
     // Fetch post with optional organizer session context for private/restricted access probe

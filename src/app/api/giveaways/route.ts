@@ -12,13 +12,13 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const clientIp = resolveClientIp(req);
-    generalApiRateLimiter.assertAllowed(`giveaways-list:${clientIp}`);
-
     // 1. Mandatory authentication guard: anonymous listing returns 401 Unauthorized
     const sessionUser = await requireAuthenticatedUser(req);
 
-    // 2. Query scoped strictly by organizerId at repository/database level
+    // 2. User-scoped rate limiter
+    generalApiRateLimiter.assertAllowed(`giveaways-list:${sessionUser.id}`);
+
+    // 3. Query scoped strictly by organizerId at repository/database level
     const summaries = await GiveawayStore.listSummaries(sessionUser.id);
 
     return NextResponse.json({
@@ -33,11 +33,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const clientIp = resolveClientIp(req);
-    generalApiRateLimiter.assertAllowed(`giveaway-create:${clientIp}`);
-
     // 1. Mandatory authentication guard for giveaway creation
     const sessionUser = await requireAuthenticatedUser(req);
+
+    // 2. User-scoped rate limiter
+    generalApiRateLimiter.assertAllowed(`giveaway-create:${sessionUser.id}`);
 
     const rawBody = await req.json();
     const validated = createGiveawaySchema.parse(rawBody);
