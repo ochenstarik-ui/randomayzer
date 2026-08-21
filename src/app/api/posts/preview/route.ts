@@ -4,7 +4,7 @@ import { postPreviewSchema } from '@/core/validation/giveaway-schemas';
 import { handleApiError } from '@/core/errors/http-errors';
 import { expensiveApiRateLimiter, generalApiRateLimiter } from '@/lib/rate-limiter';
 import { resolveClientIp } from '@/lib/client-ip';
-import { getSessionFromRequest } from '@/lib/auth/session';
+import { getSessionFromRequest, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 import { validateCsrfOrigin } from '@/lib/auth/csrf-guard';
 import { resolveEffectiveCapabilities } from '@/providers/vk/vk-capabilities';
 
@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
     // 1. Enforce CSRF Origin validation for mutating request (protects against cross-site exploitation)
     validateCsrfOrigin(req);
 
-    const sessionUser = await getSessionFromRequest(req);
+    const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+    const sessionUser = sessionId ? await getSessionFromRequest(req) : null;
     const clientIp = resolveClientIp(req);
 
     // 2. Strict Rate Limiting:

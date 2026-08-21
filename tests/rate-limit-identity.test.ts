@@ -8,7 +8,7 @@ import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
 import { MemoryUserRepository, setUserRepository } from '../src/lib/repository/user-repository';
 import { MemorySessionStore, setSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
-import { expensiveApiRateLimiter, generalApiRateLimiter } from '../src/lib/rate-limiter';
+import { expensiveApiRateLimiter, generalApiRateLimiter, preAuthRateLimiter } from '../src/lib/rate-limiter';
 import { ProviderFactory } from '../src/providers/factory';
 import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 
@@ -33,6 +33,7 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
 
     expensiveApiRateLimiter.reset();
     generalApiRateLimiter.reset();
+    preAuthRateLimiter.reset();
   });
 
   afterEach(() => {

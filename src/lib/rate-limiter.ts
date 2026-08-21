@@ -122,3 +122,8 @@ export const oauthStartRateLimiter = new SlidingWindowRateLimiter({
   windowMs: 60 * 1000,
   maxRequests: 10,
 });
+
+export const preAuthRateLimiter = new SlidingWindowRateLimiter({
+  windowMs: 60_000, // 1 minute
+  maxRequests: 60,  // 60 unauthenticated/failed-auth requests per minute per client identity
+});
