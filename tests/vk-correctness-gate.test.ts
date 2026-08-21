@@ -134,10 +134,10 @@ describe('Phase 2.1.1 VK Client Correctness Gate & Official Schema Verification'
       'wall.getById',
       {},
       auth,
-      { signal: controller.signal, maxRetries: 3, retryInitialDelayMs: 200 }
+      { signal: controller.signal, maxRetries: 3, retryInitialDelayMs: 300 }
     );
 
-    setTimeout(() => controller.abort(), 30);
+    setTimeout(() => controller.abort(), 20);
 
     await expect(callPromise).rejects.toThrow(VkCancelledError);
     expect(fetchCount).toBe(1);
