@@ -27,13 +27,13 @@ export function sha256(content: string): string {
 }
 
 /**
- * Computes deterministic conditionsHash for given filter rules
+ * Computes deterministic conditionsHash for given filter rules.
+ * Supports backward compatibility for legacy snapshots that stored excludeDuplicateComments.
  */
-export function computeConditionsHash(rules: FilterRules): string {
-  const canonicalRules = {
+export function computeConditionsHash(rules: FilterRules | Record<string, any>): string {
+  const canonicalRules: Record<string, any> = {
     excludeAdmins: Boolean(rules.excludeAdmins),
-    excludeBlacklistedIds: [...(rules.excludeBlacklistedIds || [])].map(s => s.trim().toLowerCase()).sort(),
-    excludeDuplicateComments: Boolean(rules.excludeDuplicateComments),
+    excludeBlacklistedIds: [...(rules.excludeBlacklistedIds || [])].map(s => String(s).trim().toLowerCase()).sort(),
     minEligibleParticipants: rules.minEligibleParticipants ?? 1,
     requireComment: Boolean(rules.requireComment),
     requireLike: Boolean(rules.requireLike),
@@ -41,6 +41,11 @@ export function computeConditionsHash(rules: FilterRules): string {
     requireSubscription: Boolean(rules.requireSubscription),
     targetGroupId: rules.targetGroupId || null,
   };
+
+  // Backward compatibility: preserve legacy canonical key for snapshots stored with excludeDuplicateComments
+  if ('excludeDuplicateComments' in rules && rules.excludeDuplicateComments !== undefined) {
+    canonicalRules.excludeDuplicateComments = Boolean(rules.excludeDuplicateComments);
+  }
 
   return sha256(canonicalStringify(canonicalRules));
 }

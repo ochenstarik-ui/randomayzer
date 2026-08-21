@@ -21,18 +21,23 @@ export function applyFilterRules(
   participants: RawParticipant[],
   rules: FilterRules
 ): FilterResult {
-  // 1. Deduplicate participants by platformUserId (if enabled, aggregate comment counts)
+  // 1. Deduplicate participants by platformUserId (unconditional deduplication: 1 participant = 1 chance)
   const participantMap = new Map<string, RawParticipant>();
 
   for (const p of participants) {
     const existing = participantMap.get(p.platformUserId);
+    const pComments = typeof p.commentsCount === 'number' ? p.commentsCount : (p.commented ? 1 : 0);
+
     if (!existing) {
-      participantMap.set(p.platformUserId, { ...p });
+      participantMap.set(p.platformUserId, {
+        ...p,
+        commentsCount: pComments,
+      });
     } else {
       // Merge actions
       existing.liked = existing.liked || p.liked;
       existing.commented = existing.commented || p.commented;
-      existing.commentsCount = (existing.commentsCount || 0) + (p.commentsCount || 1);
+      existing.commentsCount = (existing.commentsCount || 0) + pComments;
       existing.reposted = existing.reposted || p.reposted;
       existing.subscribed = existing.subscribed || p.subscribed;
       existing.isAdmin = existing.isAdmin || p.isAdmin;

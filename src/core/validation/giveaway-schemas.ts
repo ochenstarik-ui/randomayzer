@@ -9,7 +9,7 @@ export const filterRulesSchema = z.object({
   requireRepost: z.boolean().default(false),
   requireSubscription: z.boolean().default(false),
   excludeAdmins: z.boolean().default(false),
-  excludeDuplicateComments: z.boolean().default(true),
+  excludeDuplicateComments: z.boolean().optional(),
   excludeBlacklistedIds: z.array(z.string().max(128)).max(1000).default([]),
   targetGroupId: z.string().max(128).optional(),
   minEligibleParticipants: z.number().int().min(1).max(100000).default(1),
@@ -21,7 +21,6 @@ const defaultRulesObject = {
   requireRepost: false,
   requireSubscription: false,
   excludeAdmins: false,
-  excludeDuplicateComments: true,
   excludeBlacklistedIds: [] as string[],
   minEligibleParticipants: 1,
 };

@@ -19,7 +19,7 @@ export interface FilterRules {
   targetGroupId?: string;
   excludeAdmins: boolean;
   excludeBlacklistedIds: string[]; // List of user IDs or usernames to exclude
-  excludeDuplicateComments: boolean; // Count user only once even if multiple comments
+  excludeDuplicateComments?: boolean; // @deprecated legacy field for backward compatibility
   minEligibleParticipants?: number;
 }
 
@@ -30,7 +30,6 @@ export const DEFAULT_FILTER_RULES: FilterRules = {
   requireSubscription: false,
   excludeAdmins: false,
   excludeBlacklistedIds: [],
-  excludeDuplicateComments: true,
   minEligibleParticipants: 1,
 };
 
