@@ -2,30 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ProviderFactory } from '@/providers/factory';
 import { postPreviewSchema } from '@/core/validation/giveaway-schemas';
 import { handleApiError } from '@/core/errors/http-errors';
-import { generalApiRateLimiter } from '@/lib/rate-limiter';
+import { expensiveApiRateLimiter, generalApiRateLimiter } from '@/lib/rate-limiter';
 import { resolveClientIp } from '@/lib/client-ip';
 import { getSessionFromRequest } from '@/lib/auth/session';
+import { validateCsrfOrigin } from '@/lib/auth/csrf-guard';
 import { resolveEffectiveCapabilities } from '@/providers/vk/vk-capabilities';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Enforce CSRF Origin validation for mutating request (protects against cross-site exploitation)
+    validateCsrfOrigin(req);
+
     const sessionUser = await getSessionFromRequest(req);
     const clientIp = resolveClientIp(req);
 
-    // Rate limiting: isolate authenticated user bucket from anonymous IP bucket
-    const rateLimitKey = sessionUser
-      ? `post-preview:user:${sessionUser.id}`
-      : `post-preview:anon:${clientIp}`;
-    generalApiRateLimiter.assertAllowed(rateLimitKey);
+    // 2. Strict Rate Limiting:
+    // - Authenticated organizers get isolated user-scoped general bucket
+    // - Anonymous clients get strict expensive rate limiter (15 req / 10s) to prevent VK proxy abuse
+    if (sessionUser) {
+      generalApiRateLimiter.assertAllowed(`post-preview:user:${sessionUser.id}`);
+    } else {
+      expensiveApiRateLimiter.assertAllowed(`post-preview:anon:${clientIp}`);
+    }
 
     const rawBody = await req.json();
     const validated = postPreviewSchema.parse(rawBody);
     const provider = ProviderFactory.getVkProvider();
 
-    // Fetch post with optional organizer session context for private/restricted access probe
+    // 3. Fetch post with optional organizer session context for private/restricted access probe
     const post = await provider.fetchPost(validated.url, { organizerId: sessionUser?.id });
 
-    // Derive effective capabilities based on the actual auth mode used to access the post
+    // 4. Derive effective capabilities based on the actual auth mode used to access the post
     const effectiveCapabilities = resolveEffectiveCapabilities(
       post.resolvedAuthType ? { type: post.resolvedAuthType } : undefined
     );

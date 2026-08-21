@@ -151,10 +151,11 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
     });
   });
 
-  // ─── 2. Anonymous vs Authenticated Bucket Isolation ──────────────────────────
-  describe('Anonymous vs Authenticated Bucket Isolation', () => {
-    it('exhausting anonymous rate limit on post preview does not block authenticated organizers', async () => {
+  // ─── 2. Organizer Bucket Isolation on Preview ────────────────────────────────
+  describe('Organizer Bucket Isolation on Preview', () => {
+    it('exhausting one organizer rate limit on post preview does not block another organizer', async () => {
       const alice = await createOrganizerWithSession('1001', 'Alice');
+      const bob = await createOrganizerWithSession('1002', 'Bob');
 
       const mockProvider = {
         fetchPost: vi.fn().mockResolvedValue({
@@ -172,22 +173,13 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
       };
       vi.spyOn(ProviderFactory, 'getVkProvider').mockReturnValue(mockProvider as any);
 
-      // Exhaust anonymous IP bucket
+      // Exhaust Alice's post-preview bucket
       for (let i = 0; i < 120; i++) {
-        generalApiRateLimiter.check('post-preview:anon:direct-client');
+        generalApiRateLimiter.check(`post-preview:user:${alice.user.id}`);
       }
 
-      // Anonymous preview request is rate-limited (429)
-      const anonReq = new NextRequest('http://localhost/api/posts/preview', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
-      });
-      const anonRes = await previewPost(anonReq);
-      expect(anonRes.status).toBe(429);
-
-      // Authenticated organizer preview request SUCCEEDS (200)
-      const authReq = new NextRequest('http://localhost/api/posts/preview', {
+      // Alice's preview request is rate-limited (429)
+      const aliceReq = new NextRequest('http://localhost/api/posts/preview', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -195,9 +187,21 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
         },
         body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
       });
-      const authRes = await previewPost(authReq);
-      expect(authRes.status).toBe(200);
-      const data = await authRes.json();
+      const aliceRes = await previewPost(aliceReq);
+      expect(aliceRes.status).toBe(429);
+
+      // Bob's preview request SUCCEEDS (200)
+      const bobReq = new NextRequest('http://localhost/api/posts/preview', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          cookie: `${SESSION_COOKIE_NAME}=${bob.sessionId}`,
+        },
+        body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
+      });
+      const bobRes = await previewPost(bobReq);
+      expect(bobRes.status).toBe(200);
+      const data = await bobRes.json();
       expect(data.success).toBe(true);
     });
   });
@@ -230,9 +234,25 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
   });
 
   // ─── 4. TRUST_PROXY=true IP Resolution & Rate Limiting ────────────────────────
-  describe('TRUST_PROXY=true Behavior', () => {
-    it('uses validated client IP for anonymous endpoints when TRUST_PROXY=true', async () => {
+  describe('TRUST_PROXY=true Behavior on Public Endpoints', () => {
+    it('uses validated client IP for anonymous post-preview endpoint when TRUST_PROXY=true', async () => {
       process.env.TRUST_PROXY = 'true';
+
+      const mockProvider = {
+        fetchPost: vi.fn().mockResolvedValue({
+          platform: 'VK',
+          ownerId: '-100',
+          postId: '1',
+          title: 'Test',
+          text: 'Hello',
+          imageUrl: 'https://example.com/img.png',
+          likesCount: 5,
+          commentsCount: 1,
+          repostsCount: 0,
+          resolvedAuthType: 'SERVICE',
+        }),
+      };
+      vi.spyOn(ProviderFactory, 'getVkProvider').mockReturnValue(mockProvider as any);
 
       const req1 = new NextRequest('http://localhost/api/posts/preview', {
         method: 'POST',
@@ -252,31 +272,15 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
         body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
       });
 
-      // Exhaust IP 203.0.113.195
-      for (let i = 0; i < 120; i++) {
-        generalApiRateLimiter.check('post-preview:anon:203.0.113.195');
+      // Exhaust IP 203.0.113.195 on anonymous post-preview bucket (15 requests)
+      for (let i = 0; i < 15; i++) {
+        expensiveApiRateLimiter.check('post-preview:anon:203.0.113.195');
       }
 
       const res1 = await previewPost(req1);
       expect(res1.status).toBe(429);
 
       // req2 from different IP 198.51.100.25 is NOT blocked
-      const mockProvider = {
-        fetchPost: vi.fn().mockResolvedValue({
-          platform: 'VK',
-          ownerId: '-100',
-          postId: '1',
-          title: 'Test',
-          text: 'Hello',
-          imageUrl: 'https://example.com/img.png',
-          likesCount: 5,
-          commentsCount: 1,
-          repostsCount: 0,
-          resolvedAuthType: 'SERVICE',
-        }),
-      };
-      vi.spyOn(ProviderFactory, 'getVkProvider').mockReturnValue(mockProvider as any);
-
       const res2 = await previewPost(req2);
       expect(res2.status).toBe(200);
     });

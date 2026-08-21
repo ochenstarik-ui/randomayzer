@@ -88,7 +88,10 @@ export default function NewGiveawayWizardPage() {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Не удалось загрузить данные поста');
+        if (res.status === 401) {
+          throw new Error('Для создания розыгрыша и предпросмотра публикации необходимо войти через VK ID.');
+        }
+        throw new Error(data.error?.message || data.error || 'Не удалось загрузить данные поста');
       }
 
       setPostData(data.post);
