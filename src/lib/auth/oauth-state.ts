@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from 'crypto';
 import { UnauthorizedError, ValidationError } from '@/core/errors/http-errors';
+import { prisma } from '@/lib/prisma';
 
 export interface OAuthTransaction {
   state: string;
@@ -16,9 +17,9 @@ export interface IOAuthTransactionStore {
   }): Promise<{ state: string; codeVerifier: string; codeChallenge: string }>;
   consumeTransaction(state: string): Promise<{ codeVerifier: string; redirectTarget: string }>;
   invalidateTransaction(state: string): Promise<boolean>;
-  clear(): void;
-  size(): number;
-  cleanupExpired(): number;
+  clear(): void | Promise<void>;
+  size(): number | Promise<number>;
+  cleanupExpired(): number | Promise<number>;
 }
 
 /**
@@ -143,4 +144,125 @@ export class MemoryOAuthTransactionStore implements IOAuthTransactionStore {
   }
 }
 
-export const defaultOAuthTransactionStore: IOAuthTransactionStore = new MemoryOAuthTransactionStore();
+export class PrismaOAuthTransactionStore implements IOAuthTransactionStore {
+  private readonly defaultTtlMs: number;
+
+  constructor(options?: { defaultTtlMs?: number }) {
+    this.defaultTtlMs = options?.defaultTtlMs ?? 10 * 60 * 1000; // 10 minutes
+  }
+
+  public async createTransaction(options?: {
+    redirectTarget?: string;
+    ttlMs?: number;
+  }): Promise<{ state: string; codeVerifier: string; codeChallenge: string }> {
+    const state = generateOAuthState();
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
+
+    const now = new Date();
+    const ttl = options?.ttlMs ?? this.defaultTtlMs;
+    const expiresAt = new Date(now.getTime() + ttl);
+
+    await prisma.oAuthTransaction.create({
+      data: {
+        state,
+        codeVerifier,
+        redirectTarget: options?.redirectTarget || '/',
+        createdAt: now,
+        expiresAt,
+      },
+    });
+
+    return { state, codeVerifier, codeChallenge };
+  }
+
+  /**
+   * Atomically retrieves and removes the OAuth transaction in a single operation.
+   * Guarantees exact-once consumption per state string in concurrent and multi-instance environments.
+   */
+  public async consumeTransaction(state: string): Promise<{ codeVerifier: string; redirectTarget: string }> {
+    if (!state || typeof state !== 'string') {
+      throw new ValidationError('OAuth state parameter is missing or invalid');
+    }
+
+    try {
+      const tx = await prisma.$transaction(async (txPrisma) => {
+        const found = await txPrisma.oAuthTransaction.findUnique({
+          where: { state },
+        });
+
+        if (!found) {
+          return null;
+        }
+
+        await txPrisma.oAuthTransaction.delete({
+          where: { state },
+        });
+
+        return found;
+      });
+
+      if (!tx) {
+        throw new UnauthorizedError('OAuth state not found or was already consumed (single-use constraint)');
+      }
+
+      if (Date.now() > tx.expiresAt.getTime()) {
+        throw new UnauthorizedError('OAuth state has expired');
+      }
+
+      return {
+        codeVerifier: tx.codeVerifier,
+        redirectTarget: tx.redirectTarget || '/',
+      };
+    } catch (error: any) {
+      if (error instanceof UnauthorizedError || error instanceof ValidationError) {
+        throw error;
+      }
+      if (error?.code === 'P2025') {
+        throw new UnauthorizedError('OAuth state not found or was already consumed (single-use constraint)');
+      }
+      throw error;
+    }
+  }
+
+  public async invalidateTransaction(state: string): Promise<boolean> {
+    if (!state || typeof state !== 'string') return false;
+    try {
+      const res = await prisma.oAuthTransaction.deleteMany({
+        where: { state },
+      });
+      return res.count > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  public async cleanupExpired(): Promise<number> {
+    const res = await prisma.oAuthTransaction.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    return res.count;
+  }
+
+  public async clear(): Promise<void> {
+    await prisma.oAuthTransaction.deleteMany();
+  }
+
+  public async size(): Promise<number> {
+    return await prisma.oAuthTransaction.count();
+  }
+}
+
+export function createOAuthTransactionStore(): IOAuthTransactionStore {
+  const driver = process.env.STORAGE_DRIVER || (process.env.NODE_ENV === 'test' ? 'memory' : 'prisma');
+  if (driver === 'memory') {
+    return new MemoryOAuthTransactionStore();
+  }
+  return new PrismaOAuthTransactionStore();
+}
+
+export let defaultOAuthTransactionStore: IOAuthTransactionStore = createOAuthTransactionStore();
+
+export function setOAuthTransactionStore(store: IOAuthTransactionStore): void {
+  defaultOAuthTransactionStore = store;
+}

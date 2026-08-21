@@ -42,6 +42,7 @@ model User {
 
   giveaways     Giveaway[]
   credentials   UserCredential?
+  sessions      Session[]
 }
 
 model UserCredential {
@@ -168,4 +169,27 @@ model AuditRecord {
   drawId                 String
   drawnAt                DateTime            @default(now())
   verifiedAt             DateTime            @default(now())
+}
+
+model OAuthTransaction {
+  id             String    @id @default(cuid())
+  state          String    @unique
+  codeVerifier   String
+  redirectTarget String?
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+
+  @@index([expiresAt])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  sessionId  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+  @@index([userId])
 }
