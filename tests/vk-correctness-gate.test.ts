@@ -134,7 +134,7 @@ describe('Phase 2.1.1 VK Client Correctness Gate & Official Schema Verification'
       'wall.getById',
       {},
       auth,
-      { signal: controller.signal, maxRetries: 3, retryInitialDelayMs: 300 }
+      { signal: controller.signal, maxRetries: 3, retryInitialDelayMs: 1000 }
     );
 
     setTimeout(() => controller.abort(), 20);

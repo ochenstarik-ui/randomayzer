@@ -12,23 +12,31 @@ import {
   ShieldCheck, 
   ArrowRight,
   RefreshCw,
+  LogIn,
 } from 'lucide-react';
 import { GiveawaySummary } from '@/lib/repository/giveaway-repository';
 
 export default function DashboardPage() {
   const [giveaways, setGiveaways] = useState<GiveawaySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isUnauthenticated, setIsUnauthenticated] = useState(false);
 
   const fetchGiveaways = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/giveaways');
+      if (res.status === 401) {
+        setIsUnauthenticated(true);
+        setGiveaways([]);
+        return;
+      }
+      setIsUnauthenticated(false);
       const data = await res.json();
       if (data.giveaways) {
         setGiveaways(data.giveaways);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load giveaways:', err);
     } finally {
       setLoading(false);
     }
@@ -37,14 +45,24 @@ export default function DashboardPage() {
   useEffect(() => {
     let ignore = false;
     fetch('/api/giveaways')
-      .then(res => res.json())
+      .then(res => {
+        if (res.status === 401) {
+          if (!ignore) {
+            setIsUnauthenticated(true);
+            setGiveaways([]);
+          }
+          return null;
+        }
+        return res.json();
+      })
       .then(data => {
-        if (!ignore && data.giveaways) {
+        if (!ignore && data && data.giveaways) {
+          setIsUnauthenticated(false);
           setGiveaways(data.giveaways);
         }
       })
       .catch(err => {
-        console.error(err);
+        console.error('Failed to load giveaways:', err);
       })
       .finally(() => {
         if (!ignore) {
@@ -139,6 +157,21 @@ export default function DashboardPage() {
           <div className="py-12 text-center text-slate-400 text-sm">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" />
             Загрузка списка...
+          </div>
+        ) : isUnauthenticated ? (
+          <div className="py-12 text-center border border-dashed border-blue-500/30 rounded-xl bg-blue-950/20 px-4">
+            <LogIn className="w-10 h-10 text-blue-400 mx-auto mb-3" />
+            <p className="text-sm text-slate-200 font-medium mb-1">Требуется авторизация</p>
+            <p className="text-xs text-slate-400 mb-5 max-w-sm mx-auto">
+              Войдите через VK ID, чтобы управлять своими конкурсами и просматривать историю розыгрышей.
+            </p>
+            <a
+              href="/api/auth/vk/start?redirectTarget=/"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-[#0077ff] hover:bg-[#0066dd] text-white rounded-lg transition-all active:scale-95 shadow-md shadow-blue-600/30"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              Войти через VK ID
+            </a>
           </div>
         ) : giveaways.length === 0 ? (
           <div className="py-12 text-center border border-dashed border-slate-800 rounded-xl bg-slate-950/40">

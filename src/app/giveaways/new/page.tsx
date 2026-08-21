@@ -21,15 +21,19 @@ import {
   Check, 
   AlertCircle,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 import { FilterRules, DEFAULT_FILTER_RULES, PostMetadata } from '@/core/types/giveaway';
 import { FilteredParticipant, Winner } from '@/core/types/participant';
 import { DrawExecutionResult, ParticipantSnapshotData } from '@/core/types/audit';
+import { extractApiErrorMessage } from '@/lib/api-error-parser';
 
 export default function NewGiveawayWizardPage() {
   // Wizard state
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [wizardError, setWizardError] = useState<string | null>(null);
 
   // Step 1: Post URL & Metadata
   const [postUrl, setPostUrl] = useState('');
@@ -79,6 +83,8 @@ export default function NewGiveawayWizardPage() {
     if (!postUrl.trim()) return;
     setLoadingPost(true);
     setPostError(null);
+    setWizardError(null);
+    setCreatedGiveawayId(null);
 
     try {
       const res = await fetch('/api/posts/preview', {
@@ -92,7 +98,7 @@ export default function NewGiveawayWizardPage() {
         if (res.status === 401) {
           throw new Error('Для создания розыгрыша и предпросмотра публикации необходимо войти через VK ID.');
         }
-        throw new Error(data.error?.message || data.error || 'Не удалось загрузить данные поста');
+        throw new Error(extractApiErrorMessage(data, 'Не удалось загрузить данные поста', res.status));
       }
 
       setPostData(data.post);
@@ -108,9 +114,11 @@ export default function NewGiveawayWizardPage() {
       });
 
       const createData = await createRes.json();
-      if (createData.giveaway) {
-        setCreatedGiveawayId(createData.giveaway.id);
+      if (!createRes.ok || !createData.success || !createData.giveaway?.id) {
+        throw new Error(extractApiErrorMessage(createData, 'Не удалось создать розыгрыш в базе данных', createRes.status));
       }
+
+      setCreatedGiveawayId(createData.giveaway.id);
     } catch (err: any) {
       setPostError(err.message);
     } finally {
@@ -140,8 +148,12 @@ export default function NewGiveawayWizardPage() {
 
   // Step 2 handler: Fetch & Enrich Participants
   const handleFetchParticipants = async () => {
-    if (!createdGiveawayId) return;
+    if (!createdGiveawayId) {
+      setWizardError('Розыгрыш не создан. Пожалуйста, вернитесь на шаг 1 и загрузите пост заново.');
+      return;
+    }
     setLoadingParticipants(true);
+    setWizardError(null);
 
     try {
       const activeRules: FilterRules = {
@@ -159,7 +171,9 @@ export default function NewGiveawayWizardPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || data.error || 'Ошибка загрузки участников');
+      if (!res.ok || !data.success) {
+        throw new Error(extractApiErrorMessage(data, 'Ошибка загрузки участников', res.status));
+      }
 
       setTotalCount(data.totalCount || 0);
       setEligibleCount(data.eligibleCount || 0);
@@ -167,7 +181,7 @@ export default function NewGiveawayWizardPage() {
       setStep(3);
       await loadParticipantsPage(createdGiveawayId, 1, participantTab);
     } catch (err: any) {
-      alert(err.message);
+      setWizardError(err.message);
     } finally {
       setLoadingParticipants(false);
     }
@@ -175,8 +189,12 @@ export default function NewGiveawayWizardPage() {
 
   // Step 3 handler: Lock Immutable Snapshot
   const handleLockSnapshotAndProceed = async () => {
-    if (!createdGiveawayId) return;
+    if (!createdGiveawayId) {
+      setWizardError('Идентификатор розыгрыша не найден.');
+      return;
+    }
     setLockingSnapshot(true);
+    setWizardError(null);
 
     try {
       const res = await fetch(`/api/giveaways/${createdGiveawayId}/snapshot`, {
@@ -186,7 +204,9 @@ export default function NewGiveawayWizardPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка создания неизменяемого слепка');
+      if (!res.ok || !data.success) {
+        throw new Error(extractApiErrorMessage(data, 'Ошибка создания неизменяемого слепка', res.status));
+      }
 
       setLockedSnapshot(data.snapshot);
       if (data.seedCommitment) {
@@ -194,7 +214,7 @@ export default function NewGiveawayWizardPage() {
       }
       setStep(4);
     } catch (err: any) {
-      alert(err.message);
+      setWizardError(err.message);
     } finally {
       setLockingSnapshot(false);
     }
@@ -207,19 +227,22 @@ export default function NewGiveawayWizardPage() {
       return;
     }
     setUnlockingSnapshot(true);
+    setWizardError(null);
     try {
       const res = await fetch(`/api/giveaways/${createdGiveawayId}/unlock`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || data.error || 'Ошибка разблокировки слепка');
+      if (!res.ok || !data.success) {
+        throw new Error(extractApiErrorMessage(data, 'Ошибка разблокировки слепка', res.status));
+      }
 
       setLockedSnapshot(null);
       setSeedCommitment(null);
       setStep(3);
     } catch (err: any) {
-      alert(err.message);
+      setWizardError(err.message);
     } finally {
       setUnlockingSnapshot(false);
     }
@@ -227,8 +250,12 @@ export default function NewGiveawayWizardPage() {
 
   // Step 4 handler: Execute Draw
   const handleExecuteDraw = async () => {
-    if (!createdGiveawayId) return;
+    if (!createdGiveawayId) {
+      setWizardError('Идентификатор розыгрыша не найден.');
+      return;
+    }
     setDrawing(true);
+    setWizardError(null);
 
     try {
       const res = await fetch(`/api/giveaways/${createdGiveawayId}/draw`, {
@@ -241,12 +268,14 @@ export default function NewGiveawayWizardPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Ошибка проведения розыгрыша');
+      if (!res.ok || !data.success) {
+        throw new Error(extractApiErrorMessage(data, 'Ошибка проведения розыгрыша', res.status));
+      }
 
       setDrawResult(data.drawResult);
       setStep(5);
     } catch (err: any) {
-      alert(err.message);
+      setWizardError(err.message);
     } finally {
       setDrawing(false);
     }
@@ -295,48 +324,61 @@ export default function NewGiveawayWizardPage() {
         </div>
       </div>
 
+      {/* Global Wizard Error Banner */}
+      {wizardError && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{wizardError}</span>
+          </div>
+          <button
+            onClick={() => setWizardError(null)}
+            className="text-rose-400 hover:text-rose-200 p-1 rounded transition-colors"
+            title="Закрыть"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ================= STEP 1: Post URL Input & Preview ================= */}
       {step === 1 && (
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-xl">
           <div>
-            <h2 className="text-xl font-bold text-white mb-1">Шаг 1: Выберите запись ВКонтакте</h2>
-            <p className="text-xs sm:text-sm text-slate-400">
-              Вставьте ссылку на конкурсный пост со стены сообщества или личной страницы
+            <h2 className="text-lg font-bold text-white mb-1">Шаг 1: Выбор записи ВКонтакте</h2>
+            <p className="text-xs text-slate-400">
+              Вставьте прямую ссылку на пост в сообществе или на стене пользователя
             </p>
           </div>
 
-          <div className="space-y-3">
-            <label className="block text-xs font-medium text-slate-300">
-              Ссылка на пост ВКонтакте
-            </label>
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-300">Ссылка на пост VK</label>
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
-                placeholder="https://vk.com/wall-22446688_1054"
+                placeholder="https://vk.com/wall-123456_789"
                 value={postUrl}
                 onChange={(e) => setPostUrl(e.target.value)}
-                className="flex-1 px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
               />
               <button
+                type="button"
                 onClick={handleFetchPost}
                 disabled={loadingPost || !postUrl.trim()}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/25 flex items-center justify-center gap-2 shrink-0"
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-400 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-2"
               >
                 {loadingPost ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    Загрузка...
+                    <span>Загрузка...</span>
                   </>
                 ) : (
-                  'Загрузить пост'
+                  <span>Загрузить пост</span>
                 )}
               </button>
             </div>
-
-            {/* Quick Demo Helper */}
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Info className="w-3.5 h-3.5 text-blue-400" />
-              <span>Для теста можно вставить: </span>
+            <div className="flex items-center gap-2 text-xs text-slate-400 pt-1">
+              <span>Пример:</span>
               <button
                 type="button"
                 onClick={() => setPostUrl('https://vk.com/wall-22446688_1054')}
@@ -363,25 +405,37 @@ export default function NewGiveawayWizardPage() {
                     <img
                       src={postData.authorAvatarUrl}
                       alt={postData.authorName || 'Author'}
-                      className="w-10 h-10 rounded-full object-cover border border-slate-700"
+                      className="w-10 h-10 rounded-full border border-slate-800 object-cover"
                     />
                   )}
                   <div>
-                    <h4 className="text-sm font-semibold text-white">{postData.authorName}</h4>
-                    <span className="text-xs text-slate-400">Сообщество организатора</span>
+                    <h4 className="text-sm font-semibold text-white">
+                      {postData.authorName || 'Сообщество VK'}
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Опубликовано {postData.publishedAt ? new Date(postData.publishedAt).toLocaleDateString('ru-RU') : 'недавно'}
+                    </p>
                   </div>
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  Пост готов
-                </span>
+                <a
+                  href={postData.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-400 hover:underline inline-flex items-center gap-1"
+                >
+                  <span>Открыть в VK</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
 
-              <p className="text-xs sm:text-sm text-slate-300 whitespace-pre-line leading-relaxed">
-                {postData.text}
-              </p>
+              {postData.text && (
+                <p className="text-xs text-slate-300 whitespace-pre-line line-clamp-4 leading-relaxed">
+                  {postData.text}
+                </p>
+              )}
 
               {postData.imageUrl && (
-                <div className="relative rounded-xl overflow-hidden max-h-64 border border-slate-800">
+                <div className="rounded-lg overflow-hidden border border-slate-800 max-h-64">
                   <img
                     src={postData.imageUrl}
                     alt="Post preview"
@@ -419,8 +473,15 @@ export default function NewGiveawayWizardPage() {
 
               <div className="pt-2 flex justify-end">
                 <button
-                  onClick={() => setStep(2)}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30"
+                  onClick={() => {
+                    if (!createdGiveawayId) {
+                      setPostError('Не удалось создать розыгрыш в базе данных. Пожалуйста, убедитесь, что вы авторизованы через VK ID, и повторите предпросмотр.');
+                      return;
+                    }
+                    setStep(2);
+                  }}
+                  disabled={!createdGiveawayId}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl transition-all shadow-md shadow-blue-600/30"
                 >
                   Перейти к настройке условий →
                 </button>

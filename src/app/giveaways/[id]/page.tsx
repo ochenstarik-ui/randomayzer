@@ -16,6 +16,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { StoredGiveaway } from '@/lib/giveaway-store';
+import { extractApiErrorMessage } from '@/lib/api-error-parser';
 
 export default function GiveawayDetailPage() {
   const params = useParams();
@@ -24,6 +25,7 @@ export default function GiveawayDetailPage() {
   const [giveaway, setGiveaway] = useState<StoredGiveaway | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<any | null>(null);
@@ -33,9 +35,12 @@ export default function GiveawayDetailPage() {
     const fetchGw = async () => {
       try {
         setLoading(true);
+        setError(null);
         const res = await fetch(`/api/giveaways/${id}/public`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || data.error || 'Розыгрыш не найден');
+        if (!res.ok || !data.success || !data.giveaway) {
+          throw new Error(extractApiErrorMessage(data, 'Розыгрыш не найден', res.status));
+        }
         setGiveaway(data.giveaway);
       } catch (err: any) {
         setError(err.message);
@@ -50,11 +55,15 @@ export default function GiveawayDetailPage() {
     if (!id) return;
     try {
       setVerifying(true);
+      setVerifyError(null);
       const res = await fetch(`/api/giveaways/${id}/verify`);
       const data = await res.json();
+      if (!res.ok) {
+        throw new Error(extractApiErrorMessage(data, 'Ошибка верификации розыгрыша', res.status));
+      }
       setVerificationResult(data);
     } catch (err: any) {
-      alert(err.message);
+      setVerifyError(err.message);
     } finally {
       setVerifying(false);
     }
@@ -223,6 +232,14 @@ export default function GiveawayDetailPage() {
                 </button>
               </div>
             </div>
+
+            {/* Verification Error Banner */}
+            {verifyError && (
+              <div className="p-4 rounded-xl border bg-rose-950/40 border-rose-500/40 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{verifyError}</span>
+              </div>
+            )}
 
             {/* Live Verification Banner if clicked */}
             {verificationResult && (

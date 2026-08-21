@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 
 interface AuthUser {
   id: string;
@@ -16,6 +17,7 @@ interface AuthUser {
 export function AuthButton() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -78,9 +80,13 @@ export function AuthButton() {
     );
   }
 
+  const authUrl = pathname && pathname !== '/' 
+    ? `/api/auth/vk/start?redirectTarget=${encodeURIComponent(pathname)}`
+    : '/api/auth/vk/start';
+
   return (
     <a
-      href="/api/auth/vk/start"
+      href={authUrl}
       className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-[#0077ff]/15 hover:bg-[#0077ff]/25 text-[#0077ff] border border-[#0077ff]/30 rounded-lg transition-all active:scale-95 shadow-sm"
     >
       <LogIn className="w-3.5 h-3.5" />
