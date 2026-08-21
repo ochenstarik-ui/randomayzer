@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GiveawayStore } from '@/lib/giveaway-store';
-import { generateCryptoSecureSeed } from '@/core/randomizer/hasher';
 import { executeDeterministicDrawV1 } from '@/core/randomizer/deterministic';
 import { executeDrawSchema } from '@/core/validation/giveaway-schemas';
 import { 

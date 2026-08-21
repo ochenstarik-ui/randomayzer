@@ -1,7 +1,8 @@
+import { PlatformType } from '../core/types/giveaway';
 import { SocialMediaProvider } from './types';
 import { VkProvider } from './vk/vk-provider';
 import { VkMockProvider } from './vk/vk-mock-provider';
-import { DependencyUnavailableError } from '../core/errors/http-errors';
+import { DependencyUnavailableError, ValidationError } from '../core/errors/http-errors';
 
 export class ProviderFactory {
   public static getVkProvider(): SocialMediaProvider {
@@ -25,5 +26,17 @@ export class ProviderFactory {
     throw new DependencyUnavailableError(
       'VK provider credentials are not configured. Configure VK_SERVICE_TOKEN or set USE_VK_MOCK=true for staging/test.'
     );
+  }
+
+  public static getProvider(platform: PlatformType): SocialMediaProvider {
+    switch (platform) {
+      case 'VK':
+        return this.getVkProvider();
+      case 'TELEGRAM':
+      case 'YOUTUBE':
+        throw new ValidationError(`Platform "${platform}" is not currently supported`);
+      default:
+        throw new ValidationError(`Unknown platform: ${platform}`);
+    }
   }
 }

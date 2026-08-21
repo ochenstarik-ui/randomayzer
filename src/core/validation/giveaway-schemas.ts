@@ -80,6 +80,13 @@ export function validateProviderCapabilities(
     );
   }
 
+  if (rules.requireSubscription && !capabilities.subscriptions) {
+    throw new ValidationError(
+      'Subscription verification is not supported by the current provider',
+      { condition: 'requireSubscription' }
+    );
+  }
+
   if (rules.excludeAdmins && !capabilities.adminDetection) {
     throw new ValidationError(
       'Admin detection requires VK ID organizer authorization',

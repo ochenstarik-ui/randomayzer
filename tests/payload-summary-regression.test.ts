@@ -4,7 +4,6 @@ import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
 import { POST as participantsPost } from '../src/app/api/giveaways/[id]/participants/route';
 import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
-import { ProviderRegistry } from '../src/providers/registry';
 import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
 
 describe('POST /participants Payload Summary Regression Test', () => {
@@ -13,7 +12,6 @@ describe('POST /participants Payload Summary Regression Test', () => {
 
   beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
-    ProviderRegistry.useMockVk();
     defaultSessionStore.clear();
     sessionId = await defaultSessionStore.createSession(user);
   });

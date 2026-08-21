@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ProviderRegistry } from '../src/providers/registry';
+import { ProviderFactory } from '../src/providers/factory';
 import { VkProvider } from '../src/providers/vk/vk-provider';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
@@ -14,13 +14,11 @@ describe('Security: VK_SERVICE_TOKEN handling', () => {
 
   beforeEach(() => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
-    ProviderRegistry.useMockVk();
   });
 
-  it('ProviderRegistry does not expose VK_SERVICE_TOKEN in public API', () => {
+  it('ProviderFactory does not expose VK_SERVICE_TOKEN in public API', () => {
     process.env.VK_SERVICE_TOKEN = secretToken;
-    // Re-initialize registry (static block already ran, but we can inspect provider)
-    const provider = ProviderRegistry.getProvider('VK');
+    const provider = ProviderFactory.getProvider('VK');
     expect(provider.platform).toBe('VK');
     expect(provider).not.toHaveProperty('serviceToken');
     delete process.env.VK_SERVICE_TOKEN;
@@ -63,7 +61,6 @@ describe('Security: VK_SERVICE_TOKEN handling', () => {
 
   it('Post preview response does not contain VK_SERVICE_TOKEN', async () => {
     process.env.VK_SERVICE_TOKEN = secretToken;
-    ProviderRegistry.useMockVk(); // mock so no real API call
     const req = new NextRequest('http://localhost/api/posts/preview', {
       method: 'POST',
       body: JSON.stringify({ url: 'https://vk.com/wall-1_1' }),

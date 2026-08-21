@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
-import { ProviderRegistry } from '../src/providers/registry';
 import { POST as drawPost } from '../src/app/api/giveaways/[id]/draw/route';
 import { POST as participantsPost } from '../src/app/api/giveaways/[id]/participants/route';
 import { POST as snapshotPost } from '../src/app/api/giveaways/[id]/snapshot/route';
@@ -55,7 +54,6 @@ async function createReadyGiveaway() {
 describe('Concurrency analysis', () => {
   beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
-    ProviderRegistry.useMockVk();
     defaultSessionStore.clear();
     sessionId = await defaultSessionStore.createSession(testUser);
   });

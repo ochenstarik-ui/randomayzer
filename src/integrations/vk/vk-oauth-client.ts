@@ -271,8 +271,5 @@ export function setOAuthClient(client: IVkOAuthClient): void {
 }
 
 export function getOAuthClient(): IVkOAuthClient {
-  if (process.env.USE_VK_MOCK === 'true' || (process.env.NODE_ENV === 'test' && !process.env.VK_APP_ID)) {
-    return defaultVkOAuthClient;
-  }
   return defaultVkOAuthClient;
 }

@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { validateFilterRulesAgainstProviderCapabilities } from '../src/core/filtering/rule-validation';
+import { validateProviderCapabilities } from '../src/core/validation/giveaway-schemas';
 import { VkMockProvider } from '../src/providers/vk/vk-mock-provider';
 import { VkProvider } from '../src/providers/vk/vk-provider';
-import { ProviderRegistry } from '../src/providers/registry';
 import { FilterRules } from '../src/core/types/giveaway';
 import { NextRequest } from 'next/server';
 import { POST as participantsPost } from '../src/app/api/giveaways/[id]/participants/route';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
 import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
+import { ValidationError } from '../src/core/errors/http-errors';
 
 const testUser = { id: 'usr_capabilities_tester', vkUserId: '77777' };
 let sessionId: string;
@@ -34,7 +34,6 @@ async function createGiveaway(store: typeof GiveawayStore) {
       requireSubscription: false,
       excludeAdmins: false,
       excludeBlacklistedIds: [],
-      excludeDuplicateComments: true,
     },
     winnersCount: 1,
     reserveWinnersCount: 0,
@@ -56,7 +55,6 @@ function buildReq(id: string, body: object): NextRequest {
 describe('Provider capabilities', () => {
   beforeEach(async () => {
     GiveawayStore.setRepository(new MemoryGiveawayRepository());
-    ProviderRegistry.useMockVk();
     defaultSessionStore.clear();
     sessionId = await defaultSessionStore.createSession(testUser);
   });
@@ -95,12 +93,10 @@ describe('Provider capabilities', () => {
       requireSubscription: false,
       excludeAdmins: false,
       excludeBlacklistedIds: [],
-      excludeDuplicateComments: true,
     };
     const provider = new VkMockProvider();
-    const result = validateFilterRulesAgainstProviderCapabilities(rules, provider.capabilities);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes('requireRepost'))).toBe(true);
+    expect(() => validateProviderCapabilities(rules, provider.capabilities)).toThrow(ValidationError);
+    expect(() => validateProviderCapabilities(rules, provider.capabilities)).toThrow(/repost/i);
   });
 
   it('validation rejects excludeAdmins when provider cannot detect admins', () => {
@@ -111,12 +107,24 @@ describe('Provider capabilities', () => {
       requireSubscription: false,
       excludeAdmins: true,
       excludeBlacklistedIds: [],
-      excludeDuplicateComments: true,
     };
     const provider = new VkMockProvider();
-    const result = validateFilterRulesAgainstProviderCapabilities(rules, provider.capabilities);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.includes('excludeAdmins'))).toBe(true);
+    expect(() => validateProviderCapabilities(rules, provider.capabilities)).toThrow(ValidationError);
+    expect(() => validateProviderCapabilities(rules, provider.capabilities)).toThrow(/admin/i);
+  });
+
+  it('validation rejects requireSubscription when provider does not support subscriptions', () => {
+    const rules: FilterRules = {
+      requireLike: false,
+      requireComment: false,
+      requireRepost: false,
+      requireSubscription: true,
+      excludeAdmins: false,
+      excludeBlacklistedIds: [],
+    };
+    const capabilities = { ...new VkMockProvider().capabilities, subscriptions: false };
+    expect(() => validateProviderCapabilities(rules, capabilities)).toThrow(ValidationError);
+    expect(() => validateProviderCapabilities(rules, capabilities)).toThrow(/subscription/i);
   });
 
   it('validation accepts supported combinations', () => {
@@ -128,12 +136,9 @@ describe('Provider capabilities', () => {
       targetGroupId: '-100',
       excludeAdmins: false,
       excludeBlacklistedIds: [],
-      excludeDuplicateComments: true,
     };
     const provider = new VkMockProvider();
-    const result = validateFilterRulesAgainstProviderCapabilities(rules, provider.capabilities);
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    expect(() => validateProviderCapabilities(rules, provider.capabilities)).not.toThrow();
   });
 
   it('participants route returns 400 when requireRepost is requested for VK', async () => {
@@ -146,7 +151,6 @@ describe('Provider capabilities', () => {
         requireSubscription: false,
         excludeAdmins: false,
         excludeBlacklistedIds: [],
-        excludeDuplicateComments: true,
       },
     });
 
@@ -167,7 +171,6 @@ describe('Provider capabilities', () => {
         requireSubscription: false,
         excludeAdmins: true,
         excludeBlacklistedIds: [],
-        excludeDuplicateComments: true,
       },
     });
 
@@ -189,7 +192,6 @@ describe('Provider capabilities', () => {
         targetGroupId: '-100',
         excludeAdmins: false,
         excludeBlacklistedIds: [],
-        excludeDuplicateComments: true,
       },
     });
 

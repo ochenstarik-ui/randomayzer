@@ -33,7 +33,7 @@ graph TD
   - `checkSubscription(userIds: string[], groupId: string)`: Проверка подписки на сообщество.
 - **`VkProvider`**: Боевой клиент к VK API с поддержкой пакетных запросов `execute`.
 - **`VkMockProvider`**: Тестовый провайдер для демонстрации, локальной разработки и оффлайн-тестирования.
-- **`ProviderRegistry`**: Фабрика для получения провайдера по типу платформы (`vk`, `telegram`, `youtube`).
+- **`ProviderFactory`**: Фабрика для получения провайдера по типу платформы (`VK`, `TELEGRAM`, `YOUTUBE`).
 
 ### 2.3. Data & Persistence Layer (`prisma/` + `src/lib/`)
 - **PostgreSQL** в качестве надежного реляционного хранилища.
