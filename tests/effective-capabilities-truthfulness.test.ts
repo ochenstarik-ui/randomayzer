@@ -14,6 +14,7 @@ import { VkPrivateResourceError } from '../src/integrations/vk/vk-errors';
 import { ProviderFactory } from '../src/providers/factory';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
+import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 
 describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
   let userRepo: MemoryUserRepository;
@@ -299,11 +300,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
     // 6a. Create giveaway for Alice (has credentials)
     const gwAlice = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-101_101',
-      platform: 'VK',
-      platformOwnerId: '-101',
-      platformPostId: '101',
-      title: 'Alice Giveaway',
       organizerId: loggedInUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-101',
@@ -332,11 +330,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
     // 6b. Create giveaway for Charlie (no credentials)
     const gwCharlie = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-303_303',
-      platform: 'VK',
-      platformOwnerId: '-303',
-      platformPostId: '303',
-      title: 'Charlie Giveaway',
       organizerId: loggedInUserWithoutCreds.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-303',
@@ -382,11 +377,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-555_555',
-      platform: 'VK',
-      platformOwnerId: '-555',
-      platformPostId: '555',
-      title: 'David Giveaway',
       organizerId: expiredUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-555',
@@ -430,11 +422,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-777_777',
-      platform: 'VK',
-      platformOwnerId: '-777',
-      platformPostId: '777',
-      title: 'Eve Giveaway',
       organizerId: expiredNoRefreshUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-777',
@@ -479,11 +468,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-888_888',
-      platform: 'VK',
-      platformOwnerId: '-888',
-      platformPostId: '888',
-      title: 'Frank Giveaway',
       organizerId: legacyUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-888',
@@ -529,11 +515,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
 
     const gw = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-999_999',
-      platform: 'VK',
-      platformOwnerId: '-999',
-      platformPostId: '999',
-      title: 'Grace Giveaway',
       organizerId: legacyRefreshUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-999',
@@ -564,11 +547,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
   it('11. giveaway detail response never leaks token or secret fields', async () => {
     const gwAlice = await GiveawayStore.create({
       sourceUrl: 'https://vk.com/wall-101_101',
-      platform: 'VK',
-      platformOwnerId: '-101',
-      platformPostId: '101',
-      title: 'Alice Giveaway',
       organizerId: loggedInUser.id,
+      filterRules: DEFAULT_FILTER_RULES,
       post: {
         platform: 'VK',
         ownerId: '-101',

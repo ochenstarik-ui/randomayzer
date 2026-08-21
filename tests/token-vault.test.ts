@@ -13,21 +13,21 @@ describe('Phase 2.2.1 Token Vault Security & Fail-Fast Policies', () => {
   });
 
   it('fails fast with fatal configuration error in production when TOKEN_ENCRYPTION_KEY is missing', () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     delete process.env.TOKEN_ENCRYPTION_KEY;
 
     expect(() => new AesGcmTokenVault()).toThrow(/TOKEN_ENCRYPTION_KEY environment variable is strictly required in production/i);
   });
 
   it('fails fast in production when TOKEN_ENCRYPTION_KEY is shorter than 32 characters', () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     process.env.TOKEN_ENCRYPTION_KEY = 'too-short-key';
 
     expect(() => new AesGcmTokenVault()).toThrow(/must be at least 32 characters long in production/i);
   });
 
   it('successfully initializes and encrypts/decrypts with valid 32+ character key in production', async () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     process.env.TOKEN_ENCRYPTION_KEY = 'a-super-secret-production-encryption-key-32chars!';
 
     const vault = new AesGcmTokenVault();
@@ -42,7 +42,7 @@ describe('Phase 2.2.1 Token Vault Security & Fail-Fast Policies', () => {
   });
 
   it('allows explicit dev/test key when in development or test environment', async () => {
-    process.env.NODE_ENV = 'test';
+    (process.env as any).NODE_ENV = 'test';
     delete process.env.TOKEN_ENCRYPTION_KEY;
 
     const vault = new AesGcmTokenVault();

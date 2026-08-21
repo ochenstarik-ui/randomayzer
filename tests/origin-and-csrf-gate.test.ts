@@ -18,21 +18,21 @@ describe('Phase 2.2.3 Origin, CSRF Trusted Host & Rate Limiting Gate', () => {
 
   describe('Production Base URL & VK_REDIRECT_URI Fail-Fast Policy', () => {
     it('fails fast in production when APP_BASE_URL is missing', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       delete process.env.APP_BASE_URL;
 
       expect(() => getAppBaseUrl()).toThrow(/APP_BASE_URL environment variable is strictly required in production/i);
     });
 
     it('fails fast in production when APP_BASE_URL is not HTTPS', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       process.env.APP_BASE_URL = 'http://insecure-http-url.com';
 
       expect(() => getAppBaseUrl()).toThrow(/must be a valid HTTPS URL in production/i);
     });
 
     it('fails fast in production when VK_REDIRECT_URI is missing', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       process.env.APP_BASE_URL = 'https://randomayzer.org';
       delete process.env.VK_REDIRECT_URI;
 
@@ -40,7 +40,7 @@ describe('Phase 2.2.3 Origin, CSRF Trusted Host & Rate Limiting Gate', () => {
     });
 
     it('accepts valid HTTPS configuration in production', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       process.env.APP_BASE_URL = 'https://randomayzer.org';
       process.env.VK_REDIRECT_URI = 'https://randomayzer.org/api/auth/vk/callback';
 
@@ -51,7 +51,7 @@ describe('Phase 2.2.3 Origin, CSRF Trusted Host & Rate Limiting Gate', () => {
 
   describe('CSRF Trusted Host & Host-Spoofing Immunity', () => {
     it('rejects attacker sending evil Origin even if attacker injects spoofed X-Forwarded-Host', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       process.env.APP_BASE_URL = 'https://trusted-randomayzer.org';
 
       const req = new NextRequest('http://localhost/api/auth/logout', {
@@ -78,7 +78,7 @@ describe('Phase 2.2.3 Origin, CSRF Trusted Host & Rate Limiting Gate', () => {
     });
 
     it('accepts valid origin matching configured trusted host', () => {
-      process.env.NODE_ENV = 'production';
+      (process.env as any).NODE_ENV = 'production';
       process.env.APP_BASE_URL = 'https://trusted-randomayzer.org';
 
       const req = new NextRequest('https://trusted-randomayzer.org/api/auth/logout', {

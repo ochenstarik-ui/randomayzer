@@ -27,6 +27,7 @@ describe('True Partial Fisher-Yates (HMAC_SHA256_FY_V1)', () => {
       version: 1,
       createdAt: '2026-08-17T12:00:00.000Z',
       eligibleParticipants: participants,
+      filterRulesSnapshot: DEFAULT_FILTER_RULES,
       participantCount: size,
       participantsSnapshotHash: computeParticipantsSnapshotHash(participants),
       conditionsHash: computeConditionsHash(DEFAULT_FILTER_RULES),

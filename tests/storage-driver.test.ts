@@ -40,6 +40,12 @@ describe('Storage Driver Policy & No Silent Fallback', () => {
       listGiveaways: async () => {
         throw new Error('Database connection failed');
       },
+      listGiveawaysSummary: async () => {
+        throw new Error('Database connection failed');
+      },
+      getParticipantsPaginated: async () => {
+        throw new Error('Database connection failed');
+      },
       updateStatus: async () => { throw new Error('DB error'); },
       saveParticipants: async () => { throw new Error('DB error'); },
       createAndLockSnapshot: async () => { throw new Error('DB error'); },

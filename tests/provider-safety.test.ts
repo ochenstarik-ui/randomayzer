@@ -29,7 +29,7 @@ describe('Provider Safety (No unconfigured mocks in Production)', () => {
   });
 
   it('should throw DependencyUnavailableError in production when VK credentials and USE_VK_MOCK are missing', () => {
-    process.env.NODE_ENV = 'production';
+    (process.env as any).NODE_ENV = 'production';
     delete process.env.USE_VK_MOCK;
     delete process.env.VK_SERVICE_TOKEN;
 

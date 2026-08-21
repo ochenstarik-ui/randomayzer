@@ -27,6 +27,7 @@ describe('POST /participants Payload Summary Regression Test', () => {
         postId: '1',
         sourceUrl: 'https://vk.com/wall-100_1',
         title: 'Large Payload Test',
+        text: 'Test description',
         likesCount: 100000,
         commentsCount: 50000,
         repostsCount: 0,

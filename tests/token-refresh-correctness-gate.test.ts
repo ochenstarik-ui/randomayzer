@@ -138,7 +138,7 @@ describe('Phase 2.3.1 — Token Refresh Correctness Gate', () => {
       callCount++;
       await new Promise(r => setTimeout(r, 20));
       const res = await orig(p);
-      delete res.user_id;
+      delete (res as any).user_id;
       return res;
     };
 
@@ -323,7 +323,6 @@ describe('Phase 2.3.1 — Token Refresh Correctness Gate', () => {
 
     const provider = new VkProvider('svc_token', mockClient as any, mockResolver as any);
     const results = await provider.fetchParticipants({
-      platform: 'VK',
       ownerId: '-123',
       postId: '456',
       organizerId: 'org1',
