@@ -54,6 +54,7 @@ export default function NewGiveawayWizardPage() {
   const [participants, setParticipants] = useState<FilteredParticipant[]>([]);
   const [lockedSnapshot, setLockedSnapshot] = useState<ParticipantSnapshotData | null>(null);
   const [seedCommitment, setSeedCommitment] = useState<string | null>(null);
+  const [copiedCommitment, setCopiedCommitment] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
@@ -852,9 +853,24 @@ export default function NewGiveawayWizardPage() {
               Случайный криптографический seed зафиксирован на сервере в момент блокировки слепка. Ручной ввод отключен для математической гарантии честности и защиты от seed grinding.
             </p>
             {seedCommitment && (
-              <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono flex items-center gap-2 overflow-x-auto">
-                <span className="text-slate-500 shrink-0">Commitment SHA-256:</span>
-                <span className="text-emerald-400 truncate">{seedCommitment}</span>
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-slate-500 shrink-0">Commitment SHA-256:</span>
+                  <span className="text-emerald-400 truncate">{seedCommitment}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(seedCommitment);
+                    setCopiedCommitment(true);
+                    setTimeout(() => setCopiedCommitment(false), 2000);
+                  }}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0 flex items-center gap-1 text-[10px]"
+                  title="Скопировать обязательство для публикации до жеребьевки"
+                >
+                  {copiedCommitment ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copiedCommitment ? 'Скопировано' : 'Копировать'}
+                </button>
               </div>
             )}
           </div>

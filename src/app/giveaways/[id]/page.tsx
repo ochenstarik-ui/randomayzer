@@ -33,9 +33,9 @@ export default function GiveawayDetailPage() {
     const fetchGw = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/giveaways/${id}`);
+        const res = await fetch(`/api/giveaways/${id}/public`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Розыгрыш не найден');
+        if (!res.ok) throw new Error(data.error?.message || data.error || 'Розыгрыш не найден');
         setGiveaway(data.giveaway);
       } catch (err: any) {
         setError(err.message);
@@ -269,9 +269,15 @@ export default function GiveawayDetailPage() {
                 <p className="font-mono text-amber-400 break-all">{drawResult.algorithmVersion}</p>
               </div>
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                <span className="text-slate-400">Seed:</span>
+                <span className="text-slate-400">Seed (Раскрыт):</span>
                 <p className="font-mono text-blue-400 break-all">{drawResult.seedUsed}</p>
               </div>
+              {giveaway.seedCommitment && (
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                  <span className="text-slate-400">Seed Commitment (SHA-256):</span>
+                  <p className="font-mono text-emerald-400 break-all">{giveaway.seedCommitment}</p>
+                </div>
+              )}
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
                 <span className="text-slate-400">Snapshot Hash:</span>
                 <p className="font-mono text-emerald-400 break-all">{drawResult.participantsSnapshotHash}</p>
