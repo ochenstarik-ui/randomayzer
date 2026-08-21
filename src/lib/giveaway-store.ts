@@ -73,6 +73,10 @@ export class GiveawayStore {
     return await activeRepository.createAndLockSnapshot(id, eligibleParticipants, rules);
   }
 
+  static async unlockSnapshot(id: string): Promise<StoredGiveaway> {
+    return await activeRepository.unlockSnapshot(id);
+  }
+
   static async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {
     return await activeRepository.getLatestSnapshot(giveawayId);
   }

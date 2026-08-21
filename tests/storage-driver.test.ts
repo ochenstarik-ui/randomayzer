@@ -49,6 +49,7 @@ describe('Storage Driver Policy & No Silent Fallback', () => {
       updateStatus: async () => { throw new Error('DB error'); },
       saveParticipants: async () => { throw new Error('DB error'); },
       createAndLockSnapshot: async () => { throw new Error('DB error'); },
+      unlockSnapshot: async () => { throw new Error('DB error'); },
       getLatestSnapshot: async () => { throw new Error('DB error'); },
       saveDrawResultAndAudit: async () => { throw new Error('DB error'); },
     };

@@ -96,6 +96,7 @@ export interface IGiveawayRepository {
     eligibleParticipants: FilteredParticipant[], 
     rules: FilterRules
   ): Promise<LockedSnapshotResult>;
+  unlockSnapshot(id: string): Promise<GiveawayWithRelations>;
   getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null>;
   saveDrawResultAndAudit(
     id: string, 

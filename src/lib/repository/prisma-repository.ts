@@ -443,6 +443,47 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
     }
   }
 
+  async unlockSnapshot(id: string): Promise<GiveawayWithRelations> {
+    const current = await this.getGiveawayById(id);
+    if (!current) throw new NotFoundError(`Giveaway with id "${id}" not found`);
+
+    if (current.status === 'DRAWN' || current.status === 'PUBLISHED') {
+      throw new ConflictError(`Cannot unlock snapshot: giveaway is in final status "${current.status}"`);
+    }
+
+    if (current.status !== 'SNAPSHOT_LOCKED') {
+      throw new ConflictError(
+        `Cannot unlock snapshot: giveaway "${id}" is in status "${current.status}", but requires "SNAPSHOT_LOCKED"`
+      );
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const updateRes = await tx.giveaway.updateMany({
+          where: {
+            id,
+            status: 'SNAPSHOT_LOCKED',
+          },
+          data: {
+            status: 'READY',
+            seed: null,
+          },
+        });
+
+        if (updateRes.count === 0) {
+          throw new ConflictError(`Concurrent modification or invalid status for giveaway "${id}"`);
+        }
+      });
+
+      const updated = await this.getGiveawayById(id);
+      if (!updated) throw new NotFoundError(`Giveaway with id "${id}" not found after update`);
+      return updated;
+    } catch (err: any) {
+      if (err instanceof ConflictError || err instanceof NotFoundError) throw err;
+      throw err;
+    }
+  }
+
   async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {
     const snap = await prisma.participantSnapshot.findFirst({
       where: { giveawayId },

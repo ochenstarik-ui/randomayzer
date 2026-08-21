@@ -67,6 +67,7 @@ export default function NewGiveawayWizardPage() {
   const [winnersCount, setWinnersCount] = useState<number>(1);
   const [reserveWinnersCount, setReserveWinnersCount] = useState<number>(1);
   const [drawing, setDrawing] = useState(false);
+  const [unlockingSnapshot, setUnlockingSnapshot] = useState(false);
 
   // Step 5: Results
   const [drawResult, setDrawResult] = useState<DrawExecutionResult | null>(null);
@@ -192,6 +193,31 @@ export default function NewGiveawayWizardPage() {
       alert(err.message);
     } finally {
       setLockingSnapshot(false);
+    }
+  };
+
+  // Step 4 handler: Unlock Snapshot & Return to Step 3
+  const handleUnlockAndReturnToStep3 = async () => {
+    if (!createdGiveawayId) {
+      setStep(3);
+      return;
+    }
+    setUnlockingSnapshot(true);
+    try {
+      const res = await fetch(`/api/giveaways/${createdGiveawayId}/unlock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || data.error || 'Ошибка разблокировки слепка');
+
+      setLockedSnapshot(null);
+      setSeedCommitment(null);
+      setStep(3);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setUnlockingSnapshot(false);
     }
   };
 
@@ -832,10 +858,18 @@ export default function NewGiveawayWizardPage() {
 
           <div className="flex justify-between items-center pt-4 border-t border-slate-800">
             <button
-              onClick={() => setStep(3)}
-              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors"
+              onClick={handleUnlockAndReturnToStep3}
+              disabled={unlockingSnapshot || drawing}
+              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors flex items-center gap-1.5"
             >
-              ← Назад к списку
+              {unlockingSnapshot ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Разблокировка...
+                </>
+              ) : (
+                '← Разблокировать слепок и вернуться к списку'
+              )}
             </button>
             <button
               onClick={handleExecuteDraw}

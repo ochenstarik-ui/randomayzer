@@ -241,6 +241,28 @@ export class MemoryGiveawayRepository implements IGiveawayRepository {
     };
   }
 
+  async unlockSnapshot(id: string): Promise<GiveawayWithRelations> {
+    const gw = this.giveaways.get(id);
+    if (!gw) throw new NotFoundError(`Giveaway with id "${id}" not found`);
+
+    if (gw.status === 'DRAWN' || gw.status === 'PUBLISHED') {
+      throw new ConflictError(`Cannot unlock snapshot: giveaway is in final status "${gw.status}"`);
+    }
+
+    if (gw.status !== 'SNAPSHOT_LOCKED') {
+      throw new ConflictError(
+        `Cannot unlock snapshot: giveaway "${id}" is in status "${gw.status}", but requires "SNAPSHOT_LOCKED"`
+      );
+    }
+
+    gw.status = 'READY';
+    gw.seed = null;
+    gw.seedCommitment = null;
+    gw.latestSnapshot = null;
+    gw.updatedAt = new Date().toISOString();
+    return gw;
+  }
+
   async getLatestSnapshot(giveawayId: string): Promise<ParticipantSnapshotData | null> {
     const snaps = this.snapshots.get(giveawayId) || [];
     return snaps.length > 0 ? snaps[snaps.length - 1] : null;
