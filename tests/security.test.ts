@@ -49,7 +49,6 @@ describe('Security: VK_SERVICE_TOKEN handling', () => {
           requireSubscription: false,
           excludeAdmins: false,
           excludeBlacklistedIds: [],
-          excludeDuplicateComments: true,
         },
       }),
     });

@@ -46,7 +46,6 @@ describe('Phase 2.2.2 Giveaway Ownership Invariant & AuthZ Guard Security Suite'
       requireSubscription: false,
       excludeAdmins: false,
       excludeBlacklistedIds: [],
-      excludeDuplicateComments: true,
       minEligibleParticipants: 1,
     },
     winnersCount: 1,

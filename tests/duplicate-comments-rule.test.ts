@@ -262,4 +262,60 @@ describe('Task 07: Duplicate Comments Rule & Backward Compatibility', () => {
     expect(verification.conditionsIntegrity).toBe(true);
     expect(verification.verified).toBe(true);
   });
+
+  // ─── 5. API Schemas Reject excludeDuplicateComments on Input ──────────────────
+  it('API schemas strictly reject excludeDuplicateComments preventing it from reaching snapshot', async () => {
+    const { filterRulesSchema, fetchParticipantsSchema, createSnapshotSchema, createGiveawaySchema } = await import(
+      '../src/core/validation/giveaway-schemas'
+    );
+
+    // 1. filterRulesSchema is strict and rejects the key
+    const parseResult = filterRulesSchema.safeParse({
+      requireLike: true,
+      excludeDuplicateComments: true,
+    });
+    expect(parseResult.success).toBe(false);
+    if (!parseResult.success) {
+      expect(parseResult.error.issues.some(i => i.message.includes('unrecognized_keys') || (i as any).keys?.includes('excludeDuplicateComments'))).toBe(true);
+    }
+
+    // 2. fetchParticipantsSchema rejects
+    const fetchResult = fetchParticipantsSchema.safeParse({
+      filterRules: {
+        requireLike: true,
+        excludeDuplicateComments: true,
+      },
+    });
+    expect(fetchResult.success).toBe(false);
+
+    // 3. createSnapshotSchema rejects
+    const snapResult = createSnapshotSchema.safeParse({
+      filterRules: {
+        requireLike: true,
+        excludeDuplicateComments: true,
+      },
+    });
+    expect(snapResult.success).toBe(false);
+
+    // 4. createGiveawaySchema rejects
+    const createResult = createGiveawaySchema.safeParse({
+      sourceUrl: 'https://vk.com/wall-1_1',
+      post: {
+        platform: 'VK',
+        ownerId: '-1',
+        postId: '1',
+        sourceUrl: 'https://vk.com/wall-1_1',
+        title: 'Test',
+        text: 'Test',
+        likesCount: 1,
+        commentsCount: 0,
+        repostsCount: 0,
+      },
+      filterRules: {
+        requireLike: true,
+        excludeDuplicateComments: true,
+      },
+    });
+    expect(createResult.success).toBe(false);
+  });
 });
