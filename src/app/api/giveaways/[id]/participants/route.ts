@@ -13,10 +13,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // 1. Enforce giveaway ownership authorization (private participant PII data)
     const { sessionUser } = await requireGiveawayOwner(req, id);
@@ -43,10 +43,10 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // 1. Enforce giveaway ownership authorization for importing participants
     const { giveaway, sessionUser } = await requireGiveawayOwner(req, id);

@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const clientIp = resolveClientIp(req);
     expensiveApiRateLimiter.assertAllowed(`verify-get:${clientIp}:${id}`);
 

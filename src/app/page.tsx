@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   Gift, 
@@ -19,9 +19,9 @@ export default function DashboardPage() {
   const [giveaways, setGiveaways] = useState<GiveawaySummary[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchGiveaways = async () => {
+  const fetchGiveaways = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const res = await fetch('/api/giveaways');
       const data = await res.json();
       if (data.giveaways) {
@@ -32,10 +32,29 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchGiveaways();
+    let ignore = false;
+    fetch('/api/giveaways')
+      .then(res => res.json())
+      .then(data => {
+        if (!ignore && data.giveaways) {
+          setGiveaways(data.giveaways);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const completedCount = giveaways.filter(g => g.status === 'DRAWN' || g.status === 'PUBLISHED').length;

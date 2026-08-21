@@ -45,10 +45,11 @@ let hasWarnedMissingProxy = false;
  */
 export function resolveClientIp(req: NextRequest): string {
   const isTrustProxy = process.env.TRUST_PROXY === 'true';
+  const directIp = (req as unknown as { ip?: string }).ip;
 
   if (!isTrustProxy) {
-    if (req.ip) {
-      return normalizeIp(req.ip);
+    if (directIp) {
+      return normalizeIp(directIp);
     }
 
     if (process.env.NODE_ENV === 'production' && !hasWarnedMissingProxy) {
@@ -68,7 +69,7 @@ export function resolveClientIp(req: NextRequest): string {
   const xRealIp = req.headers.get('x-real-ip');
   const cfConnectingIp = req.headers.get('cf-connecting-ip');
 
-  const rawHeader = xForwardedFor || xRealIp || cfConnectingIp || req.ip;
+  const rawHeader = xForwardedFor || xRealIp || cfConnectingIp || directIp;
 
   if (!rawHeader) {
     return 'unknown-client';
@@ -81,7 +82,7 @@ export function resolveClientIp(req: NextRequest): string {
 
   // Handle multi-value proxy chains: "client, proxy1, proxy2"
   // The first (leftmost) entry is the client-reported IP
-  const parts = rawHeader.split(',').map(s => s.trim()).filter(Boolean);
+  const parts = rawHeader.split(',').map((s: string) => s.trim()).filter(Boolean);
   if (parts.length === 0) {
     return 'unknown-client';
   }
