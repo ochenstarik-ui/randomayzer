@@ -6,6 +6,7 @@ import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repositor
 import { NextRequest } from 'next/server';
 import { POST as giveawaysPost } from '../src/app/api/giveaways/route';
 import { POST as previewPost } from '../src/app/api/posts/preview/route';
+import { defaultSessionStore, SESSION_COOKIE_NAME } from '../src/lib/auth/session';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -61,8 +62,14 @@ describe('Security: VK_SERVICE_TOKEN handling', () => {
 
   it('Post preview response does not contain VK_SERVICE_TOKEN', async () => {
     process.env.VK_SERVICE_TOKEN = secretToken;
+    const sessionStore = defaultSessionStore;
+    const sessionId = await sessionStore.createSession({ id: 'usr_sec_test', vkUserId: '12345' });
     const req = new NextRequest('http://localhost/api/posts/preview', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `${SESSION_COOKIE_NAME}=${sessionId}`,
+      },
       body: JSON.stringify({ url: 'https://vk.com/wall-1_1' }),
     });
 

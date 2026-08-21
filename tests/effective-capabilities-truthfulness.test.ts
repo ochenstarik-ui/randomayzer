@@ -209,8 +209,8 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
     expect(json.effectiveCapabilities.accessMode).toBe('PUBLIC_SERVICE');
   });
 
-  // ─── Test 4: Anonymous + SERVICE succeeds → PUBLIC_SERVICE ───────────────────
-  it('4. anonymous request + SERVICE succeeds reports accessMode PUBLIC_SERVICE', async () => {
+  // ─── Test 4: Authenticated user without custom tokens + SERVICE succeeds → PUBLIC_SERVICE ───
+  it('4. authenticated user without custom tokens + SERVICE succeeds reports accessMode PUBLIC_SERVICE', async () => {
     const mockClient: IVkClient = {
       call: async () => ({
         items: [
@@ -218,7 +218,7 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
             id: 404,
             owner_id: -404,
             date: 1700000000,
-            text: 'Anonymous preview post',
+            text: 'Preview post with default service token',
             likes: { count: 50 },
             comments: { count: 12 },
             reposts: { count: 3 },
@@ -234,7 +234,7 @@ describe('Phase 2.3.1 — Effective Capabilities Truthfulness Gate', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // No Cookie header
+        'Cookie': sessionCookieNoCreds,
       },
       body: JSON.stringify({ url: 'https://vk.com/wall-404_404' }),
     });

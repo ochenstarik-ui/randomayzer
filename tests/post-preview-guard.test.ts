@@ -87,8 +87,8 @@ describe('Task 05: Auth & CSRF Guard on POST /api/posts/preview', () => {
     expect(body.error.code).toBe('FORBIDDEN');
   });
 
-  // ─── Test 3: Anonymous request is permitted but bounded by strict rate limiter ──
-  it('anonymous request is allowed under strict rate limiter, and blocked when limit exceeded (429)', async () => {
+  // ─── Test 3: Anonymous request is rejected with 401 Unauthorized (Option A Quota Policy) ──
+  it('anonymous request without session is rejected with 401 Unauthorized to protect VK quota', async () => {
     const req = new NextRequest('http://localhost:3000/api/posts/preview', {
       method: 'POST',
       headers: {
@@ -98,17 +98,10 @@ describe('Task 05: Auth & CSRF Guard on POST /api/posts/preview', () => {
       body: JSON.stringify({ url: 'https://vk.com/wall-12345_67890' }),
     });
 
-    // 1. Initial anonymous request succeeds
     const res = await previewPost(req);
-    expect(res.status).toBe(200);
-
-    // 2. Exhaust strict expensive limiter on anonymous bucket (15 requests)
-    for (let i = 0; i < 15; i++) {
-      expensiveApiRateLimiter.check('post-preview:anon:direct-client');
-    }
-
-    const blockedRes = await previewPost(req);
-    expect(blockedRes.status).toBe(429);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
   // ─── Test 4: Authenticated same-origin request succeeds (200) ───────────────────

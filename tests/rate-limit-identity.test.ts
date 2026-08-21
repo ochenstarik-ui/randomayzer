@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST as drawPost } from '../src/app/api/giveaways/[id]/draw/route';
 import { POST as previewPost } from '../src/app/api/posts/preview/route';
 import { GET as giveawaysGet } from '../src/app/api/giveaways/route';
+import { GET as publicGet } from '../src/app/api/giveaways/[id]/public/route';
 import { POST as snapshotPost } from '../src/app/api/giveaways/[id]/snapshot/route';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
@@ -236,53 +237,34 @@ describe('Task 02: Client Identity for Rate Limiting', () => {
 
   // ─── 4. TRUST_PROXY=true IP Resolution & Rate Limiting ────────────────────────
   describe('TRUST_PROXY=true Behavior on Public Endpoints', () => {
-    it('uses validated client IP for anonymous post-preview endpoint when TRUST_PROXY=true', async () => {
+    it('uses validated client IP for public giveaway endpoint when TRUST_PROXY=true', async () => {
       process.env.TRUST_PROXY = 'true';
 
-      const mockProvider = {
-        fetchPost: vi.fn().mockResolvedValue({
-          platform: 'VK',
-          ownerId: '-100',
-          postId: '1',
-          title: 'Test',
-          text: 'Hello',
-          imageUrl: 'https://example.com/img.png',
-          likesCount: 5,
-          commentsCount: 1,
-          repostsCount: 0,
-          resolvedAuthType: 'SERVICE',
-        }),
-      };
-      vi.spyOn(ProviderFactory, 'getVkProvider').mockReturnValue(mockProvider as any);
+      const alice = await createOrganizerWithSession('1001', 'Alice');
+      const gw = await createReadyGiveaway(alice.user.id);
 
-      const req1 = new NextRequest('http://localhost/api/posts/preview', {
-        method: 'POST',
+      const req1 = new NextRequest(`http://localhost/api/giveaways/${gw.id}/public`, {
         headers: {
           'x-forwarded-for': '203.0.113.195, 198.51.100.1',
-          'content-type': 'application/json',
         },
-        body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
       });
 
-      const req2 = new NextRequest('http://localhost/api/posts/preview', {
-        method: 'POST',
+      const req2 = new NextRequest(`http://localhost/api/giveaways/${gw.id}/public`, {
         headers: {
           'x-forwarded-for': '198.51.100.25',
-          'content-type': 'application/json',
         },
-        body: JSON.stringify({ url: 'https://vk.com/wall-100_1' }),
       });
 
-      // Exhaust IP 203.0.113.195 on anonymous post-preview bucket (15 requests)
+      // Exhaust IP 203.0.113.195 on public giveaway bucket (15 requests)
       for (let i = 0; i < 15; i++) {
-        expensiveApiRateLimiter.check('post-preview:anon:203.0.113.195');
+        expensiveApiRateLimiter.check(`giveaway-public-get:203.0.113.195:${gw.id}`);
       }
 
-      const res1 = await previewPost(req1);
+      const res1 = await publicGet(req1, { params: { id: gw.id } });
       expect(res1.status).toBe(429);
 
       // req2 from different IP 198.51.100.25 is NOT blocked
-      const res2 = await previewPost(req2);
+      const res2 = await publicGet(req2, { params: { id: gw.id } });
       expect(res2.status).toBe(200);
     });
   });
