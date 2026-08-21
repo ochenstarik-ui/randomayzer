@@ -356,4 +356,65 @@ describe('Task 08: Prisma Integration Test Harness (PostgreSQL)', () => {
     );
     expect(staleAttempt).toBe(false);
   });
+
+  // ─── 12. listGiveawaysSummary: eligibleParticipantsCount parity ──────────────
+  it('listGiveawaysSummary: calculates eligibleParticipantsCount for undrawn and drawn giveaways without full participant load', async () => {
+    // 1. Create undrawn giveaway with 15 total (10 eligible)
+    const gw1 = await createReadyGiveaway();
+
+    // 2. Create second giveaway and draw it
+    const gw2 = await giveawayRepo.createGiveaway({
+      sourceUrl: 'https://vk.com/wall-123_789',
+      post: {
+        platform: 'VK',
+        ownerId: '-123',
+        postId: '789',
+        sourceUrl: 'https://vk.com/wall-123_789',
+        title: 'Drawn Giveaway',
+        text: 'Drawn content',
+        likesCount: 15,
+        commentsCount: 8,
+        repostsCount: 0,
+      },
+      filterRules: DEFAULT_FILTER_RULES,
+      organizerId: testOrganizer.id,
+    });
+    await giveawayRepo.saveParticipants(gw2.id, sampleParticipants);
+    const locked2 = await giveawayRepo.createAndLockSnapshot(gw2.id, eligibleOnly, DEFAULT_FILTER_RULES);
+    const lockedGw2 = (await giveawayRepo.getGiveawayById(gw2.id))!;
+
+    await giveawayRepo.saveDrawResultAndAudit(gw2.id, locked2.snapshot.id, {
+      drawId: `draw_summary_test_2`,
+      giveawayId: gw2.id,
+      snapshotId: locked2.snapshot.id,
+      winners: [{ position: 1, participant: locked2.snapshot.eligibleParticipants[0], isReserve: false, selectionIndex: 0, proofHash: 'p' }],
+      reserveWinners: [],
+      winnerIds: [locked2.snapshot.eligibleParticipants[0].platformUserId],
+      reserveWinnerIds: [],
+      totalEligibleCount: 10,
+      totalLoadedCount: 15,
+      seedUsed: lockedGw2.seed!,
+      algorithmVersion: 'HMAC_SHA256_FY_V1',
+      deterministicProofHash: 'c'.repeat(64),
+      auditEventHash: 'd'.repeat(64),
+      drawnAt: new Date().toISOString(),
+      participantsSnapshotHash: locked2.snapshot.participantsSnapshotHash,
+      conditionsHash: locked2.snapshot.conditionsHash,
+    });
+
+    const summaries = await giveawayRepo.listGiveawaysSummary(testOrganizer.id);
+    expect(summaries).toHaveLength(2);
+
+    // gw2 (drawn)
+    const summary2 = summaries.find(s => s.id === gw2.id);
+    expect(summary2?.totalParticipantsCount).toBe(15);
+    expect(summary2?.eligibleParticipantsCount).toBe(10);
+    expect(summary2?.hasDrawResult).toBe(true);
+
+    // gw1 (undrawn)
+    const summary1 = summaries.find(s => s.id === gw1.id);
+    expect(summary1?.totalParticipantsCount).toBe(15);
+    expect(summary1?.eligibleParticipantsCount).toBe(10);
+    expect(summary1?.hasDrawResult).toBe(false);
+  });
 });

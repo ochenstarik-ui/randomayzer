@@ -205,6 +205,29 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       },
     });
 
+    const undrawnIds = list
+      .filter(item => !item.drawResult)
+      .map(item => item.id);
+
+    const eligibleCountsMap = new Map<string, number>();
+
+    if (undrawnIds.length > 0) {
+      const eligibleCounts = await prisma.participant.groupBy({
+        by: ['giveawayId'],
+        where: {
+          giveawayId: { in: undrawnIds },
+          eligible: true,
+        },
+        _count: {
+          _all: true,
+        },
+      });
+
+      for (const row of eligibleCounts) {
+        eligibleCountsMap.set(row.giveawayId, row._count._all);
+      }
+    }
+
     return list.map(item => ({
       id: item.id,
       platform: item.platform as PlatformType,
@@ -224,7 +247,7 @@ export class PrismaGiveawayRepository implements IGiveawayRepository {
       updatedAt: item.updatedAt.toISOString(),
       drawnAt: item.drawnAt ? item.drawnAt.toISOString() : null,
       totalParticipantsCount: item._count.participants,
-      eligibleParticipantsCount: item.drawResult?.totalEligibleCount || 0,
+      eligibleParticipantsCount: item.drawResult?.totalEligibleCount ?? (eligibleCountsMap.get(item.id) || 0),
       hasDrawResult: Boolean(item.drawResult),
       algorithmVersion: item.drawResult?.algorithmVersion || null,
     }));
