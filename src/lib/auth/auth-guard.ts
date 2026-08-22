@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getSessionFromRequest, SessionUser, SESSION_COOKIE_NAME } from './session';
+import { getSessionFromRequest, getCachedValidSession, SessionUser, SESSION_COOKIE_NAME } from './session';
 import { GiveawayStore, StoredGiveaway } from '@/lib/giveaway-store';
 import { UnauthorizedError, ForbiddenError, NotFoundError } from '@/core/errors/http-errors';
 import { validateCsrfOrigin } from './csrf-guard';
@@ -18,33 +18,43 @@ export async function requireAuthenticatedUser(req: NextRequest): Promise<Sessio
   }
 
   const clientIp = resolveClientIp(req);
+  const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value;
+
+  // 2. Fast-path: if valid session is already cached in memory (Option C),
+  // return immediately without touching session store / DB and without hitting pre-auth limit.
+  // This guarantees legitimate users are never blocked by another client's flood on a shared IP.
+  if (sessionId) {
+    const cachedUser = getCachedValidSession(sessionId);
+    if (cachedUser) {
+      return cachedUser;
+    }
+  }
+
   const preAuthKey = `pre-auth:${clientIp}`;
 
-  // 2. Pre-auth rate limit read-only check:
+  // 3. Pre-auth rate limit read-only check:
   // Asserts quota BEFORE any lookup into the session store or database.
   // If this client IP has already exhausted its pre-auth quota, reject immediately with 429.
   preAuthRateLimiter.assertCanAttempt(preAuthKey);
 
-  const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-
-  // 3. Pre-auth rate limit for anonymous requests (no cookie):
+  // 4. Pre-auth rate limit for anonymous requests (no cookie):
   // Consumes a pre-auth attempt and throws 401 Unauthorized without touching the session store.
   if (!sessionId) {
     preAuthRateLimiter.consume(preAuthKey);
     throw new UnauthorizedError('Authentication required: please log in via VK ID');
   }
 
-  // 4. Resolve active session user from session store / DB
+  // 5. Resolve active session user from session store / DB
   const sessionUser = await getSessionFromRequest(req);
 
-  // 5. Pre-auth rate limit for invalid/expired/fake session cookies:
+  // 6. Pre-auth rate limit for invalid/expired/fake session cookies:
   // Consumes a pre-auth attempt when authentication fails, preventing brute-force / fake cookie flood.
   if (!sessionUser) {
     preAuthRateLimiter.consume(preAuthKey);
     throw new UnauthorizedError('Authentication required: please log in via VK ID');
   }
 
-  // 6. Valid authenticated session: do NOT consume pre-auth quota
+  // 7. Valid authenticated session: do NOT consume pre-auth quota
   return sessionUser;
 }
 

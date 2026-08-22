@@ -9,7 +9,7 @@ import { POST as unlockPost } from '../src/app/api/giveaways/[id]/unlock/route';
 import { GiveawayStore } from '../src/lib/giveaway-store';
 import { MemoryGiveawayRepository } from '../src/lib/repository/memory-repository';
 import { MemoryUserRepository, setUserRepository } from '../src/lib/repository/user-repository';
-import { MemorySessionStore, setSessionStore, SESSION_COOKIE_NAME, ISessionStore, SessionUser } from '../src/lib/auth/session';
+import { MemorySessionStore, setSessionStore, clearSessionCache, SESSION_COOKIE_NAME, ISessionStore, SessionUser } from '../src/lib/auth/session';
 import { expensiveApiRateLimiter, generalApiRateLimiter, preAuthRateLimiter } from '../src/lib/rate-limiter';
 import { DEFAULT_FILTER_RULES } from '../src/core/types/giveaway';
 
@@ -44,7 +44,7 @@ class CountingSessionStore implements ISessionStore {
   }
 }
 
-describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup', () => {
+describe('Task 16: Pre-Authentication Rate Limiting & Legitimate User Availability', () => {
   let userRepo: MemoryUserRepository;
   let countingSessionStore: CountingSessionStore;
   let repo: MemoryGiveawayRepository;
@@ -59,6 +59,7 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
 
     countingSessionStore = new CountingSessionStore();
     setSessionStore(countingSessionStore);
+    clearSessionCache();
 
     repo = new MemoryGiveawayRepository();
     GiveawayStore.setRepository(repo);
@@ -106,7 +107,110 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
     return gw;
   }
 
-  // ─── 1. 300 Requests Without Cookie → getSessionCalls === 0 ───────────────
+  // ─── 1. Restored Test: Authenticated User NOT Blocked by Anonymous Flood ───
+  it('authenticated organizer on the same IP is not blocked by another client anonymous flood', async () => {
+    const alice = await createOrganizerWithSession('1001', 'Alice');
+
+    // Anonymous attacker floods /api/giveaways from default 'direct-client' (60 requests)
+    for (let i = 0; i < 60; i++) {
+      const unauthReq = new NextRequest('http://localhost/api/giveaways', { method: 'GET' });
+      const unauthRes = await giveawaysGet(unauthReq);
+      expect(unauthRes.status).toBe(401);
+    }
+
+    // Anonymous is now rate-limited (429)
+    const blockedAnonReq = new NextRequest('http://localhost/api/giveaways', { method: 'GET' });
+    const blockedAnonRes = await giveawaysGet(blockedAnonReq);
+    expect(blockedAnonRes.status).toBe(429);
+
+    // Alice sends request with valid session cookie from the same 'direct-client' IP -> SUCCEEDS (200)
+    const aliceReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${alice.sessionId}` },
+    });
+    const aliceRes = await giveawaysGet(aliceReq);
+    expect(aliceRes.status).toBe(200);
+    const aliceData = await aliceRes.json();
+    expect(aliceData.success).toBe(true);
+  });
+
+  // ─── 2. Authenticated User NOT Blocked by Fake Cookie Flood ───────────────
+  it('authenticated organizer on the same IP is not blocked by another client fake-cookie flood', async () => {
+    const alice = await createOrganizerWithSession('1001', 'Alice');
+
+    // Attacker floods 60 fake cookies from default 'direct-client'
+    for (let i = 0; i < 60; i++) {
+      const fakeReq = new NextRequest('http://localhost/api/giveaways', {
+        method: 'GET',
+        headers: { cookie: `${SESSION_COOKIE_NAME}=fake_cookie_${i}` },
+      });
+      const fakeRes = await giveawaysGet(fakeReq);
+      expect(fakeRes.status).toBe(401);
+    }
+
+    // 61st fake cookie request is rate-limited (429)
+    const blockedFakeReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=fake_cookie_61` },
+    });
+    const blockedFakeRes = await giveawaysGet(blockedFakeReq);
+    expect(blockedFakeRes.status).toBe(429);
+
+    // Alice sends request with valid session cookie from the same 'direct-client' IP -> SUCCEEDS (200)
+    const aliceReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${alice.sessionId}` },
+    });
+    const aliceRes = await giveawaysGet(aliceReq);
+    expect(aliceRes.status).toBe(200);
+    const aliceData = await aliceRes.json();
+    expect(aliceData.success).toBe(true);
+  });
+
+  // ─── 3. Proxy-aware Isolation with TRUST_PROXY=true ─────────────────────────
+  it('when TRUST_PROXY=true, different client IPs maintain isolated rate limit buckets', async () => {
+    process.env.TRUST_PROXY = 'true';
+    const alice = await createOrganizerWithSession('1001', 'Alice');
+
+    // Attacker on 198.51.100.1 exhausts their pre-auth quota (60 requests)
+    for (let i = 0; i < 60; i++) {
+      const req = new NextRequest('http://localhost/api/giveaways', {
+        method: 'GET',
+        headers: { 'x-forwarded-for': '198.51.100.1' },
+      });
+      const res = await giveawaysGet(req);
+      expect(res.status).toBe(401);
+    }
+
+    // Attacker on 198.51.100.1 is blocked (429)
+    const blockedReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: { 'x-forwarded-for': '198.51.100.1' },
+    });
+    const blockedRes = await giveawaysGet(blockedReq);
+    expect(blockedRes.status).toBe(429);
+
+    // Unauthenticated client on different IP 203.0.113.50 is NOT blocked (401, not 429)
+    const otherAnonReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: { 'x-forwarded-for': '203.0.113.50' },
+    });
+    const otherAnonRes = await giveawaysGet(otherAnonReq);
+    expect(otherAnonRes.status).toBe(401);
+
+    // Alice on 198.51.100.1 (same IP as attacker) SUCCEEDS (200)
+    const aliceReq = new NextRequest('http://localhost/api/giveaways', {
+      method: 'GET',
+      headers: {
+        'x-forwarded-for': '198.51.100.1',
+        cookie: `${SESSION_COOKIE_NAME}=${alice.sessionId}`,
+      },
+    });
+    const aliceRes = await giveawaysGet(aliceReq);
+    expect(aliceRes.status).toBe(200);
+  });
+
+  // ─── 4. 300 Requests Without Cookie → getSessionCalls === 0 ───────────────
   it('300 requests without cookie result in exactly 0 session store calls and 429 after 60 requests', async () => {
     let unauthorizedCount = 0;
     let rateLimitedCount = 0;
@@ -127,7 +231,7 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
     expect(countingSessionStore.getSessionCalls).toBe(0);
   });
 
-  // ─── 2. 300 Requests With Unique Fake Cookies → getSessionCalls <= 60 ──────
+  // ─── 5. 300 Requests With Unique Fake Cookies → getSessionCalls <= 60 ──────
   it('300 requests with unique invalid/fake cookies result in at most 60 session store calls', async () => {
     let unauthorizedCount = 0;
     let rateLimitedCount = 0;
@@ -147,16 +251,14 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
 
     expect(unauthorizedCount).toBe(60);
     expect(rateLimitedCount).toBe(240);
-    // Crucial evidence assertion: exactly 60 session store calls were made before limiter tripped,
-    // all remaining 240 requests were cut off at step 2 before touching session store / DB.
+    // Exactly 60 session store calls were made before limiter tripped
     expect(countingSessionStore.getSessionCalls).toBeLessThanOrEqual(60);
     expect(countingSessionStore.getSessionCalls).toBe(60);
   });
 
-  // ─── 3. Successful Authenticated Requests Do NOT Consume Pre-Auth Quota ────
+  // ─── 6. Successful Authenticated Requests Do NOT Consume Pre-Auth Quota ────
   it('successful authenticated requests do not consume pre-auth tokens (active user does not self-block)', async () => {
     const alice = await createOrganizerWithSession('1001', 'Alice');
-    countingSessionStore.getSessionCalls = 0; // reset counter after session creation
 
     // Alice makes 100 requests with her valid session cookie
     for (let i = 0; i < 100; i++) {
@@ -168,15 +270,12 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
       expect(aliceRes.status).toBe(200);
     }
 
-    // All 100 requests went through to the session store
-    expect(countingSessionStore.getSessionCalls).toBe(100);
-
     // Pre-auth rate limiter bucket for Alice's IP remains completely untouched (0 tokens consumed)
     const preAuthStatus = preAuthRateLimiter.peek('pre-auth:direct-client');
     expect(preAuthStatus.remaining).toBe(60);
   });
 
-  // ─── 4. Pre-Auth Rate Limiting on All Protected Endpoints ───────────────────
+  // ─── 7. Pre-Auth Rate Limiting on All Protected Endpoints ───────────────────
   it('pre-auth rate limiting protects all protected API routes before DB access', async () => {
     const alice = await createOrganizerWithSession('1001', 'Alice');
     const gw = await createReadyGiveaway(alice.user.id);
@@ -204,7 +303,7 @@ describe('Task 15: Pre-Authentication Rate Limiting Before Session Store Lookup'
     }
   });
 
-  // ─── 5. Regression: User-Scoped Isolation Remains Intact ─────────────────────
+  // ─── 8. Regression: User-Scoped Isolation Remains Intact ─────────────────────
   it('user-scoped rate limit isolation remains intact after pre-auth layer', async () => {
     const alice = await createOrganizerWithSession('1001', 'Alice');
     const bob = await createOrganizerWithSession('1002', 'Bob');

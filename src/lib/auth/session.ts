@@ -21,6 +21,46 @@ interface SessionRecord {
   expiresAt: number;
 }
 
+interface CachedValidSession {
+  user: SessionUser;
+  expiresAt: number;
+}
+
+// In-memory short-lived cache of verified valid sessions (Option C)
+// Protects the session store / DB from repeated lookups and prevents legitimate users
+// from being blocked by pre-auth rate limits during concurrent/subsequent requests.
+const validSessionCache = new Map<string, CachedValidSession>();
+const VALID_SESSION_CACHE_TTL_MS = 60_000; // 60s fast cache
+
+export function getCachedValidSession(sessionId: string): SessionUser | null {
+  const cached = validSessionCache.get(sessionId);
+  if (!cached) return null;
+  if (Date.now() > cached.expiresAt) {
+    validSessionCache.delete(sessionId);
+    return null;
+  }
+  return cached.user;
+}
+
+export function cacheValidSession(
+  sessionId: string,
+  user: SessionUser,
+  ttlMs: number = VALID_SESSION_CACHE_TTL_MS
+): void {
+  validSessionCache.set(sessionId, {
+    user,
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+export function invalidateSessionCache(sessionId: string): void {
+  validSessionCache.delete(sessionId);
+}
+
+export function clearSessionCache(): void {
+  validSessionCache.clear();
+}
+
 export interface ISessionStore {
   createSession(user: SessionUser, ttlMs?: number): Promise<string>;
   getSession(sessionId: string): Promise<SessionUser | null>;
@@ -55,6 +95,7 @@ export class MemorySessionStore implements ISessionStore {
       expiresAt: now + ttl,
     });
 
+    cacheValidSession(sessionId, user, ttl);
     return sessionId;
   }
 
@@ -73,6 +114,7 @@ export class MemorySessionStore implements ISessionStore {
 
   public async destroySession(sessionId: string): Promise<void> {
     if (sessionId) {
+      invalidateSessionCache(sessionId);
       this.store.delete(sessionId);
     }
   }
@@ -82,6 +124,7 @@ export class MemorySessionStore implements ISessionStore {
     let count = 0;
     for (const [k, v] of this.store.entries()) {
       if (now > v.expiresAt) {
+        invalidateSessionCache(k);
         this.store.delete(k);
         count++;
       }
@@ -90,6 +133,7 @@ export class MemorySessionStore implements ISessionStore {
   }
 
   public clear(): void {
+    clearSessionCache();
     this.store.clear();
   }
 
@@ -120,6 +164,7 @@ export class PrismaSessionStore implements ISessionStore {
       },
     });
 
+    cacheValidSession(sessionId, user, ttl);
     return sessionId;
   }
 
@@ -136,6 +181,7 @@ export class PrismaSessionStore implements ISessionStore {
     if (!record) return null;
 
     if (Date.now() > record.expiresAt.getTime()) {
+      invalidateSessionCache(sessionId);
       await prisma.session.deleteMany({
         where: { sessionId },
       });
@@ -144,7 +190,7 @@ export class PrismaSessionStore implements ISessionStore {
 
     if (!record.user) return null;
 
-    return {
+    const user: SessionUser = {
       id: record.user.id,
       vkUserId: record.user.vkUserId,
       firstName: record.user.firstName ?? undefined,
@@ -152,10 +198,14 @@ export class PrismaSessionStore implements ISessionStore {
       username: record.user.username ?? undefined,
       avatarUrl: record.user.avatarUrl ?? undefined,
     };
+
+    cacheValidSession(sessionId, user);
+    return user;
   }
 
   public async destroySession(sessionId: string): Promise<void> {
     if (sessionId) {
+      invalidateSessionCache(sessionId);
       await prisma.session.deleteMany({
         where: { sessionId },
       });
@@ -170,6 +220,7 @@ export class PrismaSessionStore implements ISessionStore {
   }
 
   public async clear(): Promise<void> {
+    clearSessionCache();
     await prisma.session.deleteMany();
   }
 
@@ -189,6 +240,7 @@ export function createSessionStore(): ISessionStore {
 export let defaultSessionStore: ISessionStore = createSessionStore();
 
 export function setSessionStore(store: ISessionStore): void {
+  clearSessionCache();
   defaultSessionStore = store;
 }
 
@@ -201,7 +253,16 @@ export async function getSessionFromRequest(
 ): Promise<SessionUser | null> {
   const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!sessionId) return null;
-  return sessionStore.getSession(sessionId);
+
+  // Fast path: check valid session cache
+  const cached = getCachedValidSession(sessionId);
+  if (cached) return cached;
+
+  const user = await sessionStore.getSession(sessionId);
+  if (user) {
+    cacheValidSession(sessionId, user);
+  }
+  return user;
 }
 
 /**
