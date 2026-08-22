@@ -18,25 +18,33 @@ export async function requireAuthenticatedUser(req: NextRequest): Promise<Sessio
   }
 
   const clientIp = resolveClientIp(req);
+  const preAuthKey = `pre-auth:${clientIp}`;
+
+  // 2. Pre-auth rate limit read-only check:
+  // Asserts quota BEFORE any lookup into the session store or database.
+  // If this client IP has already exhausted its pre-auth quota, reject immediately with 429.
+  preAuthRateLimiter.assertCanAttempt(preAuthKey);
+
   const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-  // 2. Pre-auth rate limit for anonymous requests (no cookie):
-  // Asserts rate limit BEFORE throwing 401, preventing unauthenticated flood from consuming resources.
+  // 3. Pre-auth rate limit for anonymous requests (no cookie):
+  // Consumes a pre-auth attempt and throws 401 Unauthorized without touching the session store.
   if (!sessionId) {
-    preAuthRateLimiter.assertAllowed(`pre-auth:${clientIp}`);
+    preAuthRateLimiter.consume(preAuthKey);
     throw new UnauthorizedError('Authentication required: please log in via VK ID');
   }
 
-  // 3. Resolve active session user
+  // 4. Resolve active session user from session store / DB
   const sessionUser = await getSessionFromRequest(req);
 
-  // 4. Pre-auth rate limit for invalid/fake session cookies:
-  // Charges the pre-auth limiter for the client IP to prevent brute-force / fake cookie flood against the DB.
+  // 5. Pre-auth rate limit for invalid/expired/fake session cookies:
+  // Consumes a pre-auth attempt when authentication fails, preventing brute-force / fake cookie flood.
   if (!sessionUser) {
-    preAuthRateLimiter.assertAllowed(`pre-auth:${clientIp}`);
+    preAuthRateLimiter.consume(preAuthKey);
     throw new UnauthorizedError('Authentication required: please log in via VK ID');
   }
 
+  // 6. Valid authenticated session: do NOT consume pre-auth quota
   return sessionUser;
 }
 

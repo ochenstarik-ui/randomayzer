@@ -67,6 +67,50 @@ export class SlidingWindowRateLimiter {
     return { allowed: true, remaining, resetInMs: this.windowMs };
   }
 
+  /**
+   * Read-only inspection of rate limit state without consuming quota or modifying timestamps.
+   */
+  public peek(key: string): { allowed: boolean; remaining: number; resetInMs: number } {
+    const now = Date.now();
+    const windowStart = now - this.windowMs;
+
+    const record = this.records.get(key);
+    if (!record) {
+      return { allowed: true, remaining: this.maxRequests, resetInMs: this.windowMs };
+    }
+
+    const validTimestamps = record.timestamps.filter(ts => ts > windowStart);
+    if (validTimestamps.length >= this.maxRequests) {
+      const oldest = validTimestamps[0];
+      const resetInMs = Math.max(0, oldest + this.windowMs - now);
+      return { allowed: false, remaining: 0, resetInMs };
+    }
+
+    const remaining = this.maxRequests - validTimestamps.length;
+    return { allowed: true, remaining, resetInMs: this.windowMs };
+  }
+
+  /**
+   * Read-only assertion: checks if client can attempt the action without consuming quota.
+   * Throws RateLimitError if the quota is already exhausted.
+   */
+  public assertCanAttempt(key: string): void {
+    const result = this.peek(key);
+    if (!result.allowed) {
+      throw new RateLimitError(
+        `Rate limit exceeded. Please retry after ${Math.ceil(result.resetInMs / 1000)} seconds.`,
+        { retryAfterMs: result.resetInMs }
+      );
+    }
+  }
+
+  /**
+   * Explicitly consumes one token for the given key.
+   */
+  public consume(key: string): { allowed: boolean; remaining: number; resetInMs: number } {
+    return this.check(key);
+  }
+
   public assertAllowed(key: string): void {
     const result = this.check(key);
     if (!result.allowed) {
